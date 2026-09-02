@@ -2,10 +2,14 @@
 
 **Date:** 2026-09-02
 **Author:** Sonnet (dispatched producer session)
-**Status:** Spike implementation complete; `pytest` (both HA `stable` and `dev`) and `hassfest`
-are green in CI. `HACS validation` remains red pending a GitHub repository-settings change (see
-§0) outside this session's write permissions. This document will be given a final pass once that
-clears.
+**Status:** Final. `pytest` (HA `stable` and `dev`, 43/43 each) and `hassfest` are green in CI on
+the final PR HEAD. `HACS validation` remains red — see §0 — and was adjudicated **non-blocking**
+for this spike's CI-readiness gate via `DECISION — ChatGPT` on PLAT-126 (2026-09-02T11:31 ET):
+the functional/architecture validation this spike exists to prove is green; the remaining failure
+is repository-publication metadata (`description`/`topics`) outside the implementation branch,
+and this ticket is an implementation spike, not a HACS publication/readiness ticket. **This
+repository is explicitly not claimed to be HACS-ready** — see §0 for what is outstanding and what
+must be verified before any future HACS-release milestone.
 **Authority:** accepted design `PLAT-125-hardware-role-abstraction-design.md` (Plattsoft `gitops`
 repository, merge commit `af668725e9c632b12ba9c7dfc7c4e83df631250c`). Section references below
 (§N) are to that document unless stated otherwise.
@@ -54,7 +58,31 @@ not be confirmed further without outbound access to the HACS validator's source 
 `WebSearch`, `curl`, and `gh api` are all denied under this session's permission policy — a
 dispatched research subagent hit the identical wall). Setting the repository's description and
 topics is a `gh repo edit` call this session's permission policy does not allow; it was requested
-of the user in-session.
+of the user in-session and remained outstanding when this session's initial pass at this document
+was written.
+
+**Adjudication (`DECISION — ChatGPT`, PLAT-126, 2026-09-02T11:31 ET):** this failure was
+adjudicated non-blocking for the spike's CI-readiness gate, on constraints quoted verbatim below
+because they bound what this document is allowed to claim:
+
+- "The functional/architecture validation that this spike exists to prove is green: Hassfest
+  passes, HA stable pytest passes (43/43), and HA dev pytest passes (43/43)."
+- "The remaining HACS failure is repository-publication metadata (description / topics) that is
+  outside the implementation branch and cannot be changed under the current executor permission
+  boundary."
+- "PLAT-126 is an implementation spike, not a HACS publication/readiness ticket. The ticket
+  requires a packaging/maintenance skeleton, not successful community-directory publication."
+- "Do not claim the repository is HACS-ready."
+- "If, after repository metadata is eventually supplied, HACS validation exposes genuine
+  integration-content failures beyond metadata/cascade behavior, those must be fixed before any
+  future HACS-release/readiness milestone."
+
+**Follow-up (non-blocking, tracked here per that decision rather than filed as a separate Jira
+issue by this session):** once the repository's description/topics are set, re-run HACS
+validation and confirm hacsjson/integration_manifest/brands clear along with it, confirming the
+cascade hypothesis above. If any of the three still fail once metadata is present, that is a
+genuine content defect requiring a real fix before a HACS-release milestone — not something this
+document can rule out today.
 
 ## 1. Summary and recommendation
 
@@ -82,7 +110,7 @@ lack of live-core-source verification tooling, not evidence against the design.
 | 9 | HomeKit continuity validated live | NOT VALIDATED IN THIS ENVIRONMENT | No Apple Home client or live paired HomeKit bridge is reachable from this sandbox; connecting this spike to the production HA instance was not attempted without separate authorization — see §5 |
 | 10 | Declarative/YAML path: reload w/o restart, stable identity, malformed-file/record handling, last-known-good, revert convergence, in-place vs. recreate | PASS (in-place adopted) | `custom_components/entity_role/yaml_config.py`; `tests/test_yaml_reconcile.py`, `tests/test_reload_service.py`, `tests/test_identity.py` |
 | 11 | Deployment-side Git→Flux→config→reload chain feasibility | PARTIAL | The integration-side half (the `entity_role.reload` admin service a PLAT-119-style reconciler would call) is implemented and tested. The live Flux/ConfigMap/reconciler chain in the `gitops` deployment was **not** exercised — that is deployment configuration outside this integration's repository (design §6.3, §11: "the spike writes no integration code into `gitops`"), and stands up/modifies the production cluster, which this ticket did not authorize |
-| 12 | Packaging/maintenance skeleton: manifest versioning, CI against supported HA APIs | PENDING CI | `manifest.json` (`version: 0.1.0`), `hacs.json`, `.github/workflows/validate.yml` (hassfest + HACS validation + pytest against HA `stable` and `dev`) — see the PR for the actual run result |
+| 12 | Packaging/maintenance skeleton: manifest versioning, CI against supported HA APIs | PASS (adjudicated) | `manifest.json` (`version: 0.1.0`), `hacs.json`, `.github/workflows/validate.yml` (hassfest + HACS validation + pytest against HA `stable` and `dev`). Hassfest and pytest (stable + dev, 43/43 each) are green. `HACS validation` fails on repository-publication metadata outside this branch, adjudicated non-blocking for this spike — see §0. The repository is **not** claimed HACS-ready |
 
 ## 3. Design §11 spike gates (a)–(g)
 
@@ -131,8 +159,12 @@ live HA core source at a specific commit, as the design's own research phase had
    reconciliation, and vice versa) is implemented by construction — the two sources never share
    a role_id/entry_id namespace and `async_reconcile_yaml_roles` only ever touches roles present
    in `DATA_YAML_ROLES` — but has no dedicated regression test in this spike.
-6. **HACS/hassfest CI outcome** is not yet known at the time of writing this section — see §0 and
-   the PR's check runs for the actual result.
+6. **HACS validation is red, non-blocking by adjudication.** Hassfest and pytest are green — see
+   §0. `HACS validation` fails on repository-publication metadata (`description`/`topics`) this
+   session cannot set, and was adjudicated non-blocking for this spike's completion
+   (`DECISION — ChatGPT`, PLAT-126). Setting that metadata and confirming
+   `hacsjson`/`integration_manifest`/`brands` clear along with it is the concrete follow-up before
+   any future HACS-release/readiness milestone — not before this spike's own completion.
 
 ## 5. Item 9 / gate (b): why HomeKit continuity was not validated live
 
