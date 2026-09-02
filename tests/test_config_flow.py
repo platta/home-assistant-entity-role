@@ -5,6 +5,7 @@ from __future__ import annotations
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import entity_registry as er
 
 from custom_components.entity_role.const import (
     CONF_CAPABILITY_CONTRACT,
@@ -49,7 +50,18 @@ async def test_creation_flow_happy_path(hass: HomeAssistant) -> None:
     assert set(result["options"][CONF_CAPABILITY_CONTRACT]["supported_color_modes"]) == {"hs"}
 
     await hass.async_block_till_done()
-    assert hass.states.async_entity_ids("light") != []
+    # Specifically the role entity, not just "some light exists" — the
+    # source itself is also in the "light" domain, so a bare
+    # async_entity_ids("light") != [] check (PLAT-128: confirmed to still
+    # pass even when the role entity itself silently failed to add, e.g.
+    # during this pass's expose-settings-migration regression) does not
+    # actually prove the role was created.
+    assert hass.states.get(source) is not None
+    role_ids = [
+        e.entity_id for e in er.async_get(hass).entities.values() if e.platform == DOMAIN
+    ]
+    assert len(role_ids) == 1
+    assert hass.states.get(role_ids[0]) is not None
 
 
 async def test_creation_flow_source_step_uses_domain_filtered_selector(

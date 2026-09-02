@@ -58,7 +58,30 @@
   "issues": {
     "role_unbound": {
       "title": "{role_name} needs replacement hardware",
-      "description": "The entity previously bound to {entity_id} was removed from the registry. The role has been preserved and is unavailable. Open the role's Configure button to bind replacement hardware."
+      "description": "The entity previously bound to {entity_id} was removed from the registry. The role has been preserved and is unavailable. Select Fix, or open the role's Configure button, to bind replacement hardware.",
+      "fix_flow": {
+        "step": {
+          "replace_hardware": {
+            "title": "Replace hardware",
+            "description": "{title} is unbound. Choose the replacement implementation entity.",
+            "data": {
+              "source": "New implementation entity"
+            }
+          },
+          "confirm_downgrade": {
+            "title": "Confirm capability downgrade",
+            "description": "The new hardware cannot deliver: {lost_capabilities}. These capabilities will be removed from the role's contract.",
+            "data": {
+              "confirm": "I understand, proceed"
+            }
+          }
+        },
+        "error": {
+          "source_not_found": "That entity could not be found in the entity registry.",
+          "domain_mismatch": "That entity is not in the role's domain.",
+          "role_on_role_rejected": "A role cannot be bound to another role (direct role-on-role bindings are rejected)."
+        }
+      }
     },
     "yaml_record_invalid": {
       "title": "Invalid entity_role YAML record: {role_id}",

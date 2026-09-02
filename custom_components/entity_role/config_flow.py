@@ -1,15 +1,48 @@
 """Config and options flow for Entity Role — the community (UI) path (design §7).
 
 Built on the classic config_entries.ConfigFlow / OptionsFlow base classes
-with explicit voluptuous schemas rather than the newer
-SchemaConfigFlowHandler/options_flow_reloads=True convenience the design
-cites switch_as_x/group as using: that helper's exact declarative-schema
-shape could not be verified against live core source in this sandbox (no
-outbound repository access), so this spike uses the long-stable manual-step
-pattern instead and reloads the entry explicitly via an update listener in
-__init__.py. Functionally equivalent; recorded as a verify/align item for a
-production pass in the spike results, not claimed as the same mechanism the
-design verified.
+with explicit voluptuous schemas, rather than `SchemaConfigFlowHandler` /
+`options_flow_reloads=True`. PLAT-128 carry-forward item 1 ("verify current
+HA helper/config-flow conventions and decide whether to adopt
+SchemaConfigFlowHandler... or retain the manual flow with a documented
+reason"): the spike could not verify this at all (no outbound repository
+access). This pass installed a real, current homeassistant package (see
+hide.py's module docstring for the environment-constraints note) and read
+`homeassistant/helpers/schema_config_entry_flow.py` plus its two real
+consumers, `switch_as_x/config_flow.py` and `group/config_flow.py`, directly
+— so this is now a verified decision, not an unresolved gap:
+
+- `SchemaConfigFlowHandler` is confirmed real, current, and actively used by
+  two of the exact core precedents this design already cites (switch_as_x,
+  group) — not a hypothetical convenience.
+- No `options_flow_reloads` attribute or keyword exists anywhere in that
+  module in the installed version; `switch_as_x/__init__.py` reloads on
+  options change the same way this integration already does — an explicit
+  `entry.add_update_listener(...)` (`config_entry_update_listener` there,
+  `_async_update_listener` here) — so that specific design citation appears
+  to describe a newer/dev-only refinement this sandbox's package index
+  cannot resolve (see the README's environment-constraints note), not a
+  currently-shipping difference in how reload-on-options-change works.
+- `SchemaFlowFormStep` supports the dynamic pieces this integration's flows
+  need (an async `next_step` callable for the downgrade-confirmation branch,
+  `validate_user_input` for raising a `SchemaFlowError`, async
+  `suggested_values`) — adopting it here is a real option, not blocked by a
+  shape mismatch.
+
+Decision: retain the manual `ConfigFlow`/`OptionsFlow` base classes. Both are
+current, fully-supported, non-deprecated core APIs (confirmed directly, not
+assumed) — this is not the "could not verify, played it safe" position the
+spike was in. The manual flow already correctly implements every behavior
+`SchemaConfigFlowHandler` would provide here (contract seeding from live
+state, downgrade-confirmation branching, hide/expose side effects,
+reload-on-options-change) and is covered by this repository's own test
+suite; rewriting a multi-step, dynamically-branching, side-effecting flow —
+the most consumer-visible surface in this integration — for a boilerplate
+reduction with no behavioral difference was judged unwarranted risk for a
+production pass, not a limitation to accept silently. Revisit if a future
+pass finds a concrete reason `SchemaConfigFlowHandler` specifically is
+required (e.g. a core policy change), rather than migrating for its own
+sake.
 """
 
 from __future__ import annotations
@@ -44,7 +77,7 @@ from .helpers import (
     compare_contract_to_source,
     lost_capabilities,
 )
-from .hide import async_hide_source, async_migrate_expose_settings, async_unhide_source
+from .hide import async_unhide_source
 
 
 class EntityRoleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -115,9 +148,11 @@ class EntityRoleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> config_entries.ConfigFlowResult:
         if user_input is not None:
             hide_source = user_input.get(CONF_HIDE_SOURCE, DEFAULT_HIDE_SOURCE)
-            if hide_source:
-                async_hide_source(self.hass, self._source_entity_id)
-                async_migrate_expose_settings(self.hass, self._source_entity_id, self._name)
+            # Hiding the source and migrating its expose settings onto the
+            # role happens once the role entity actually exists (PLAT-128
+            # carry-forward item 3 — see RoleEntity._apply_hide_source_policy,
+            # entity.py): at this point in the flow the entry, and therefore
+            # the role's own entity_id, does not exist yet.
             return self.async_create_entry(
                 title=self._name,
                 data={CONF_ROLE_DOMAIN: self._role_domain},
@@ -234,16 +269,19 @@ class EntityRoleOptionsFlow(config_entries.OptionsFlow):
     def _apply_rebind(
         self, new_source_entity_id: str, new_contract: dict[str, Any]
     ) -> config_entries.ConfigFlowResult:
+        # Unhiding the *old* source must happen here, before the
+        # options-change reload below overwrites CONF_SOURCE: it is the last
+        # point at which the previous binding is still known. Hiding the
+        # *new* source and migrating its expose settings onto the role,
+        # however, happens once the reload has torn down and reconstructed
+        # the role entity with its real entity_id
+        # (RoleEntity._apply_hide_source_policy, entity.py) — PLAT-128
+        # carry-forward item 3.
         old_source = self.config_entry.options.get(CONF_SOURCE)
         hide_source = self.config_entry.options.get(CONF_HIDE_SOURCE, DEFAULT_HIDE_SOURCE)
 
         if hide_source and old_source and old_source != new_source_entity_id:
             async_unhide_source(self.hass, old_source)
-        if hide_source and new_source_entity_id != old_source:
-            async_hide_source(self.hass, new_source_entity_id)
-            async_migrate_expose_settings(
-                self.hass, new_source_entity_id, self.config_entry.title
-            )
 
         return self.async_create_entry(
             title="",

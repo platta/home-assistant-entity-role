@@ -190,11 +190,15 @@ async def async_reconcile_yaml_roles(hass: HomeAssistant, config: ConfigType | N
         entity = roles.get(role_id)
         if entity is None:
             continue
+        record_hide_source = record[CONF_HIDE_SOURCE]
         if (
             entity.source_entity_id != record["_resolved_source"]
             or entity.contract != record[CONF_CAPABILITY_CONTRACT]
+            or entity.hide_source != record_hide_source
         ):
-            await entity.async_rebind(record[CONF_SOURCE], record[CONF_CAPABILITY_CONTRACT])
+            await entity.async_rebind(
+                record[CONF_SOURCE], record[CONF_CAPABILITY_CONTRACT], record_hide_source
+            )
 
     # Track last-known-good for roles still declared but currently invalid,
     # instead of dropping them: their entity was never touched above, so

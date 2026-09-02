@@ -13,8 +13,10 @@ from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from .const import (
     CONF_CAPABILITY_CONTRACT,
     CONF_DEVICE_CLASS,
+    CONF_HIDE_SOURCE,
     CONF_ROLE_ID,
     CONF_SOURCE,
+    DEFAULT_HIDE_SOURCE,
     DOMAIN_BINARY_SENSOR,
 )
 from .entity import RoleEntity
@@ -64,6 +66,7 @@ class EntityRoleBinarySensor(RoleEntity, BinarySensorEntity):
             source_entity_id=resolved,
             contract=entry.options.get(CONF_CAPABILITY_CONTRACT, {}),
             source_ref=source_ref,
+            hide_source=entry.options.get(CONF_HIDE_SOURCE, DEFAULT_HIDE_SOURCE),
         )
         entity._attr_device_class = entry.options.get(CONF_DEVICE_CLASS)
         return entity
@@ -81,6 +84,7 @@ class EntityRoleBinarySensor(RoleEntity, BinarySensorEntity):
             source_entity_id=resolved,
             contract=record.get(CONF_CAPABILITY_CONTRACT, {}),
             source_ref=source_ref,
+            hide_source=record.get(CONF_HIDE_SOURCE, DEFAULT_HIDE_SOURCE),
         )
         entity._attr_device_class = record.get(CONF_DEVICE_CLASS)
         return entity
