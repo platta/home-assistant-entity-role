@@ -52,22 +52,26 @@ async def test_creation_flow_happy_path(hass: HomeAssistant) -> None:
     assert hass.states.async_entity_ids("light") != []
 
 
-async def test_creation_flow_rejects_domain_mismatch(hass: HomeAssistant) -> None:
-    switch_source = create_source_entity(hass, "switch", "outlet", state="on")
-
+async def test_creation_flow_source_step_uses_domain_filtered_selector(
+    hass: HomeAssistant,
+) -> None:
+    """A cross-domain source is not a reachable error path through this flow
+    at all: design §5 states domain mismatch is "impossible by construction
+    in the UI (entity selector filtered to role_domain)" — the selector's
+    own schema validation rejects it before this integration's code runs
+    (confirmed by this spike's own CI: submitting one raises
+    `data_entry_flow.InvalidData`, not a graceful form error). What this
+    integration is responsible for is emitting that filtered selector in
+    the first place."""
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_ROLE_DOMAIN: "light"}
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"name": "Kitchen Counter", CONF_SOURCE: switch_source}
-    )
 
-    assert result["type"] == FlowResultType.FORM
-    assert result["step_id"] == "source"
-    assert result["errors"]["base"] == "domain_mismatch"
+    source_field = result["data_schema"].schema[CONF_SOURCE]
+    assert source_field.config["domain"] == "light"
 
 
 async def test_options_flow_replace_hardware_full_match(hass: HomeAssistant) -> None:

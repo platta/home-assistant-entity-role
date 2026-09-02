@@ -19,7 +19,10 @@ from typing import Any
 from homeassistant.core import Context, Event, EventStateChangedData, State, callback
 from homeassistant.helpers import entity_registry as er, issue_registry as ir
 from homeassistant.helpers.entity import Entity
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_track_entity_registry_updated_event,
+    async_track_state_change_event,
+)
 
 from .const import DATA_FORWARD_CHAINS, DOMAIN, ISSUE_UNBOUND
 from .helpers import async_resolve_source_ref
@@ -128,7 +131,7 @@ class RoleEntity(Entity):
         self._remove_state_listener = async_track_state_change_event(
             self.hass, [self._source_entity_id], self._handle_source_event
         )
-        self._remove_registry_listener = er.async_track_entity_registry_updated_event(
+        self._remove_registry_listener = async_track_entity_registry_updated_event(
             self.hass, self._source_entity_id, self._handle_registry_event
         )
 

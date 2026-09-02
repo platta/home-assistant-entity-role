@@ -41,3 +41,19 @@ def registry_id_for(hass: HomeAssistant, entity_id: str) -> str:
     entry = er.async_get(hass).async_get(entity_id)
     assert entry is not None
     return entry.id
+
+
+def role_entity_id(hass: HomeAssistant, domain: str, unique_id: str) -> str:
+    """Return a role's entity_id looked up by its unique_id (the config
+    entry id for a UI-owned role, the role_id for a YAML-owned one).
+
+    Deliberately not `hass.states.async_entity_ids(domain)[0]`: a test that
+    leaves the source unhidden has *two* entities in the same domain (the
+    role and its source), and indexing is ambiguous between them — this
+    spike's own first CI run caught exactly that test-authoring bug.
+    """
+    from custom_components.entity_role.const import DOMAIN
+
+    entity_id = er.async_get(hass).async_get_entity_id(domain, DOMAIN, unique_id)
+    assert entity_id is not None
+    return entity_id

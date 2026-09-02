@@ -148,14 +148,21 @@ class EntityRoleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> "EntityRoleOptionsFlow":
-        return EntityRoleOptionsFlow(config_entry)
+        return EntityRoleOptionsFlow()
 
 
 class EntityRoleOptionsFlow(config_entries.OptionsFlow):
-    """Options flow: the headline "Replace hardware" operation (design §7)."""
+    """Options flow: the headline "Replace hardware" operation (design §7).
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
+    Does not accept/store `config_entry` itself: current HA (per this
+    spike's own CI evidence) makes `OptionsFlow.config_entry` a read-only
+    property populated by the framework — assigning it in `__init__`, the
+    pattern countless older custom integrations still use, now raises
+    AttributeError. `self.config_entry` is used throughout below and simply
+    relies on that framework-provided property.
+    """
+
+    def __init__(self) -> None:
         self._candidate_entity_id: str | None = None
 
     async def async_step_init(

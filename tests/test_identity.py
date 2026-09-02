@@ -16,7 +16,7 @@ from custom_components.entity_role.const import (
 )
 from custom_components.entity_role.yaml_config import async_reconcile_yaml_roles
 
-from .conftest import create_source_entity
+from .conftest import create_source_entity, role_entity_id as get_role_entity_id
 
 
 async def test_ui_owned_role_unique_id_is_the_config_entry_id(hass: HomeAssistant) -> None:
@@ -33,8 +33,8 @@ async def test_ui_owned_role_unique_id_is_the_config_entry_id(hass: HomeAssistan
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    role_entity_id = hass.states.async_entity_ids("light")[0]
-    assert er.async_get(hass).async_get(role_entity_id).unique_id == entry.entry_id
+    role_id = get_role_entity_id(hass, "light", entry.entry_id)
+    assert er.async_get(hass).async_get(role_id).unique_id == entry.entry_id
 
 
 async def test_ui_owned_role_survives_unload_reload_with_same_identity(
@@ -52,14 +52,14 @@ async def test_ui_owned_role_survives_unload_reload_with_same_identity(
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    role_entity_id = hass.states.async_entity_ids("light")[0]
-    unique_id_before = er.async_get(hass).async_get(role_entity_id).unique_id
+    role_id = get_role_entity_id(hass, "light", entry.entry_id)
+    unique_id_before = er.async_get(hass).async_get(role_id).unique_id
 
     await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert hass.states.async_entity_ids("light") == [role_entity_id]
-    assert er.async_get(hass).async_get(role_entity_id).unique_id == unique_id_before
+    assert get_role_entity_id(hass, "light", entry.entry_id) == role_id
+    assert er.async_get(hass).async_get(role_id).unique_id == unique_id_before
 
 
 async def test_yaml_owned_role_unique_id_is_the_declared_role_id(hass: HomeAssistant) -> None:

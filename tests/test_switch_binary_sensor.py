@@ -16,7 +16,7 @@ from custom_components.entity_role.const import (
     DOMAIN,
 )
 
-from .conftest import create_source_entity
+from .conftest import create_source_entity, role_entity_id
 
 
 async def test_switch_role_proxies_and_keeps_role_declared_device_class(
@@ -38,8 +38,8 @@ async def test_switch_role_proxies_and_keeps_role_declared_device_class(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    role_entity_id = hass.states.async_entity_ids("switch")[0]
-    state = hass.states.get(role_entity_id)
+    role_id = role_entity_id(hass, "switch", entry.entry_id)
+    state = hass.states.get(role_id)
     assert state.state == "off"
     assert state.attributes["device_class"] == "outlet"
 
@@ -51,7 +51,7 @@ async def test_switch_role_proxies_and_keeps_role_declared_device_class(
     )
     await hass.async_block_till_done()
 
-    state = hass.states.get(role_entity_id)
+    state = hass.states.get(role_id)
     assert state.state == "on"
     assert state.attributes["device_class"] == "outlet"
 
@@ -73,10 +73,10 @@ async def test_binary_sensor_role_is_read_only_proxy(hass: HomeAssistant) -> Non
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    role_entity_id = hass.states.async_entity_ids("binary_sensor")[0]
-    assert hass.states.get(role_entity_id).state == "off"
-    assert hass.states.get(role_entity_id).attributes["device_class"] == "door"
+    role_id = role_entity_id(hass, "binary_sensor", entry.entry_id)
+    assert hass.states.get(role_id).state == "off"
+    assert hass.states.get(role_id).attributes["device_class"] == "door"
 
     hass.states.async_set(source, "on", {})
     await hass.async_block_till_done()
-    assert hass.states.get(role_entity_id).state == "on"
+    assert hass.states.get(role_id).state == "on"

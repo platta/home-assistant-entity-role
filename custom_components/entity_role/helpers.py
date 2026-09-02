@@ -35,11 +35,22 @@ def async_resolve_source_ref(hass: HomeAssistant, source_ref: str) -> str | None
     `er.async_validate_entity_id`'s raised-exception type has moved across
     HA versions (vol.Invalid vs. HomeAssistantError); catching broadly here
     keeps this call site independent of that rather than guessing.
+
+    Verified against CI evidence (this spike's own first CI run):
+    `er.async_validate_entity_id` does *not* raise for a syntactically
+    well-formed entity_id that simply has no registry entry — it passes the
+    string through unchanged. An explicit registry-existence check below is
+    therefore required to actually detect "not found" / "removed", not
+    optional defensive coding.
     """
+    registry = er.async_get(hass)
     try:
-        return er.async_validate_entity_id(er.async_get(hass), source_ref)
+        entity_id = er.async_validate_entity_id(registry, source_ref)
     except Exception:  # noqa: BLE001 - see docstring; any failure means "unresolved"
         return None
+    if registry.async_get(entity_id) is None:
+        return None
+    return entity_id
 
 
 def async_validate_source(
