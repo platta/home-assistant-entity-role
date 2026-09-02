@@ -41,6 +41,21 @@ observe). Each was root-caused from the actual failure/traceback before being fi
 guessed-and-retried. The fifth run (33647054906) is green on `pytest (HA stable)`, `pytest (HA
 dev)` (43/43 each), and `Hassfest`.
 
+`HACS validation` is the one remaining red check, and is not a code defect: it reports the
+repository has no description and no topics (both true — this is a brand-new repository) plus
+three further checks (`hacsjson`, `integration_manifest`, `brands`) whose messages ("expected a
+dictionary. Got None") read as content-validation failures but are not. This session tested that
+directly: `hacs.json`'s content was changed (dropping the optional `homeassistant` minimum-version
+key) between runs 33647054906 and 33647933316, and the same three checks failed identically
+before and after — ruling out `hacs.json` content as the cause. The remaining, uneliminated
+hypothesis is that these three checks are gated behind the repository having valid
+description/topics in the first place (a cascade, not four independent defects), but this could
+not be confirmed further without outbound access to the HACS validator's source (`WebFetch`,
+`WebSearch`, `curl`, and `gh api` are all denied under this session's permission policy — a
+dispatched research subagent hit the identical wall). Setting the repository's description and
+topics is a `gh repo edit` call this session's permission policy does not allow; it was requested
+of the user in-session.
+
 ## 1. Summary and recommendation
 
 **Recommendation: proceed to production implementation**, with the specific open items in §4
