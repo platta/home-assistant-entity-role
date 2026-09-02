@@ -149,4 +149,8 @@ async def test_duplicate_role_id_only_first_record_accepted(hass: HomeAssistant)
     )
     await hass.async_block_till_done()
 
-    assert len(hass.states.async_entity_ids("light")) == 1
+    # Count role entities specifically, not every light-domain entity — the
+    # source itself is also in "light" (this spike's own CI caught the
+    # ambiguity: len(async_entity_ids("light")) == 2 here, source + role).
+    role_entities = [e for e in er.async_get(hass).entities.values() if e.platform == DOMAIN]
+    assert len(role_entities) == 1

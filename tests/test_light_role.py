@@ -107,6 +107,14 @@ async def test_contract_intersection_narrows_downgraded_hardware(hass: HomeAssis
 
 
 async def test_command_forwarded_to_source(hass: HomeAssistant) -> None:
+    """Calls the role entity's own async_turn_on directly rather than going
+    through hass.services.async_call("light", "turn_on", ...) end to end:
+    registering a test double for "light"/"turn_on" *replaces* the real
+    light component's own service handler outright, so an outer call would
+    never reach `LightEntity.async_turn_on` at all (confirmed by this
+    spike's own CI) — there is exactly one "light"/"turn_on" registration,
+    and this test needs it to observe the *forwarded* (inner) call, which
+    async_forward_command itself makes."""
     source = create_source_entity(hass, "light", "nanoleaf", state="off")
     entry = await _setup_light_role(
         hass, source, {"supported_color_modes": [], "supported_features": 0}
@@ -121,7 +129,8 @@ async def test_command_forwarded_to_source(hass: HomeAssistant) -> None:
 
     hass.services.async_register("light", "turn_on", fake_turn_on)
 
-    await hass.services.async_call("light", "turn_on", {"entity_id": role_id}, blocking=True)
+    role = hass.data[DOMAIN]["roles"][entry.entry_id]
+    await role.async_turn_on()
     await hass.async_block_till_done()
 
     assert len(calls) == 1
