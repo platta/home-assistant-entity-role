@@ -2,8 +2,10 @@
 
 **Date:** 2026-09-02
 **Author:** Sonnet (dispatched producer session)
-**Status:** Spike implementation complete pending CI verification (see §0). This document will
-be updated with final CI evidence before the issue is reported as ready for review.
+**Status:** Spike implementation complete; `pytest` (both HA `stable` and `dev`) and `hassfest`
+are green in CI. `HACS validation` remains red pending a GitHub repository-settings change (see
+§0) outside this session's write permissions. This document will be given a final pass once that
+clears.
 **Authority:** accepted design `PLAT-125-hardware-role-abstraction-design.md` (Plattsoft `gitops`
 repository, merge commit `af668725e9c632b12ba9c7dfc7c4e83df631250c`). Section references below
 (§N) are to that document unless stated otherwise.
@@ -26,6 +28,18 @@ session's own sandbox (outbound `pip install` is denied under this session's per
 All test-suite evidence below is therefore CI evidence (GitHub Actions, `.github/workflows/
 validate.yml`), not something independently re-run inside the chat session — recorded here as an
 observed constraint, not glossed over.
+
+That constraint was not merely theoretical: the PR's first four CI runs (33645135079,
+33646016670, 33646589394, 33647054906) surfaced a chain of real bugs this session's own review
+had not caught — a wrong import module, an entity-registry helper that resolves a nonexistent
+entity_id instead of rejecting it, `OptionsFlow.config_entry` now being a read-only
+framework-populated property, a missing `services.yaml`, a light capability attribute that must
+be a real `LightEntityFeature` flag rather than a plain `int`, HA `dev`'s independent Python
+floor, a stale repair issue on UI rebind, and two test-authoring bugs (an ambiguous
+domain-wide entity lookup, and a test double that replaced the real service handler it meant to
+observe). Each was root-caused from the actual failure/traceback before being fixed — none were
+guessed-and-retried. The fifth run (33647054906) is green on `pytest (HA stable)`, `pytest (HA
+dev)` (43/43 each), and `Hassfest`.
 
 ## 1. Summary and recommendation
 
