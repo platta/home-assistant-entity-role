@@ -60,12 +60,35 @@ now-accurate reasons — see the table below and the module docstrings in `confi
 immaterial: the *previous* reasoning was factually wrong and had to be replaced, not merely
 supplemented, even though the practical outcome happened to be unchanged.
 
+## 0.2. Second revision round (`DECISION — ChatGPT`, 2026-09-02T16:29 ET): a narrower overstatement
+
+§0.1's revision itself overstated one detail: it described the config-entry reload cost of
+adopting `helper_integration.async_handle_source_entity_changes` as applying to "every rename...
+regardless of which reference form is used". That conflated two things that are actually
+distinct in the helper's own source (`helper_integration.py`'s `async_registry_updated`, the
+`"entity_id" in data["changes"]` branch):
+
+- a **plain entity_id** reference: the helper calls the caller-supplied
+  `set_source_entity_id_or_uuid` callback and does *not* itself reload — reload-or-not is the
+  caller's choice. (`switch_as_x`'s own callback happens to reload anyway, via
+  `hass.config_entries.async_schedule_reload` — but that is `switch_as_x`'s implementation
+  choice, not something the helper forces on every adopter.)
+- a **registry UUID** reference: the helper *unconditionally* calls
+  `await hass.config_entries.async_reload(helper_config_entry_id)` itself, not customizable by
+  the caller.
+
+Since this integration's own recommended and default persisted form is the UUID (design §6.4),
+the practical conclusion is unchanged — the reload cost is real for Entity Role's actual common
+case — but "every rename regardless of form" overstated what is inherent to the helper itself
+versus what was specific to reading `switch_as_x`'s particular callback. Corrected in
+`entity.py`'s module docstring and the table row below; no code behavior changed.
+
 ## 1. Carry-forward items (design §4 / PLAT-128 items 1–7): resolution
 
 | # | Item | Resolution | Evidence |
 |---|---|---|---|
 | 1 | Config-flow base class: adopt `SchemaConfigFlowHandler`/`options_flow_reloads`, or retain the manual flow with a documented reason | **Retained — revised, now verified against real current `dev` source, not a stale local package** | See §0.1: the first pass's "doesn't exist" finding was wrong (stale local package); re-verified against a genuine `home-assistant/core` `dev` git clone. `options_flow_reloads` is real. Retained anyway, for a different, more specific reason: `SchemaFlowFormStep.next_step`'s callable signature has no `hass` access, and the options flow's downgrade-confirmation branch needs the candidate source's *live* state — a genuine, source-verified framework gap, not a version-verification gap. Full reasoning in `config_flow.py`'s module docstring. |
-| 2 | Source rename/removal tracking: align with `helper_integration.async_handle_source_entity_changes` where appropriate | **Retained — revised, now verified against real current `dev` source, not a stale local package** | See §0.1: the first pass's "doesn't exist" finding was wrong; re-verified directly, including reading `switch_as_x/__init__.py`'s real current usage of it. Retained anyway: the helper is inescapably config-entry-scoped (`helper_config_entry_id` is required), so it can never serve a YAML-owned role — adopting it only for UI-owned roles would introduce the source-conditional behavior design §10.3 calls a design smell, and would also be a concrete rename-time reload/flicker regression relative to this integration's existing zero-reload in-place relink. Full reasoning in `entity.py`'s module docstring. A genuinely separate gap surfaced during this check — device-linkage (design §4) was never implemented for either configuration source — filed as `FOLLOW-UP — Sonnet`, not fixed here. |
+| 2 | Source rename/removal tracking: align with `helper_integration.async_handle_source_entity_changes` where appropriate | **Retained — revised twice, now verified against real current `dev` source, not a stale local package** | See §0.1 and §0.2: the first pass's "doesn't exist" finding was wrong; re-verified directly, including reading `switch_as_x/__init__.py`'s real current usage of it. Retained anyway: the helper is inescapably config-entry-scoped (`helper_config_entry_id` is required), so it can never serve a YAML-owned role — adopting it only for UI-owned roles would introduce the source-conditional behavior design §10.3 calls a design smell. The concrete rename-time cost is real but narrower than a second-pass draft claimed (§0.2): the helper's own logic only *forces* a reload for a registry-UUID-pinned source (this integration's own recommended/default form); a plain entity_id-pinned source's reload-or-not is left to the caller's callback. Full reasoning in `entity.py`'s module docstring. A genuinely separate gap surfaced during this check — device-linkage (design §4) was never implemented for either configuration source — filed as `FOLLOW-UP — Sonnet`, not fixed here. |
 | 3 | Expose-settings migration: replace/validate against current supported APIs | **Fixed — real, verified API; two additional real defects found and fixed** | See §2 below. |
 | 4 | Repair flow/deep-link for an unbound source | **Implemented** | `repairs.py::UnboundSourceFixFlow`, modeled directly on a real in-tree fix flow that reconfigures a config entry from a repair (`homeassistant/components/workday/repairs.py`). Reuses `helpers.py`'s validation/classification functions so the options flow and the repair fix flow cannot silently diverge. `ISSUE_UNBOUND` is now `is_fixable=True` for a UI-owned role (entry_id present); a YAML-owned role's issue stays informational (`is_fixable=False`) since there is no config/options flow to deep-link into. Tests: `tests/test_repairs.py` (4 tests: full-match rebind through the fix flow, downgrade-confirmation branch, issue clearing, YAML fallback to `ConfirmRepairFlow`). |
 | 5 | Dedicated UI-vs-YAML ownership isolation/collision regression coverage | **Added** | `tests/test_ownership_isolation.py` (4 tests): a UI-owned role survives a YAML reconcile to empty and to an unrelated record set; removing a UI-owned entry does not affect a YAML-owned role; the two sources' identity namespaces (config entry ID vs. author-declared `role_id`) are independently verified, not merely asserted "by construction". |

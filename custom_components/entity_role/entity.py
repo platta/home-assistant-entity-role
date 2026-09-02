@@ -46,18 +46,31 @@ Confirmed, precisely:
   entity" as a valid use (line 42-44). The first pass's docstring understated
   this; corrected here. This is not, by itself, a reason to prefer or avoid
   the helper.
-- The concrete behavioral cost of adopting it for UI-owned roles specifically:
-  read together, `switch_as_x`'s own `set_source_entity_id_or_uuid` callback
-  (which calls `hass.config_entries.async_schedule_reload` unconditionally)
-  and the helper's own UUID-reference fallback (`await hass.config_entries.
-  async_reload(...)`, when the stored reference is not a plain entity_id)
-  mean **every rename of a bound source reloads the entire config entry** —
-  tear down and reconstruct the role entity — regardless of which reference
-  form is used. This integration's own `_handle_source_relinked` below
-  instead relinks the *same, already-running* entity instance in place, with
-  no reload at all. Adopting the helper for UI-owned roles would be a
-  concrete behavioral regression on rename for that path relative to what
-  this integration already does and already tests
+- The concrete behavioral cost of adopting it for UI-owned roles specifically
+  — corrected per `DECISION — ChatGPT` (PLAT-128, 2026-09-02T16:29 ET): a
+  prior revision of this docstring overstated this as "every rename reloads
+  regardless of reference form", which conflated the helper's own logic with
+  `switch_as_x`'s particular callback choice. What the helper itself actually
+  does (`helper_integration.py`'s `async_registry_updated`, the "entity_id"
+  in `data["changes"]` branch) is form-dependent: for a **plain entity_id**
+  reference, it calls the caller-supplied `set_source_entity_id_or_uuid`
+  callback and does *not* itself reload — whether that callback reloads is
+  up to the caller (`switch_as_x`'s own callback happens to call
+  `hass.config_entries.async_schedule_reload` anyway, but that is
+  `switch_as_x`'s choice, not something the helper forces). For a **registry
+  UUID** reference, the helper *unconditionally* calls
+  `await hass.config_entries.async_reload(helper_config_entry_id)` itself —
+  not customizable via callback. This integration's own recommended and
+  default persisted form is the UUID (design §6.4: "pin the UUID, because it
+  survives entity_id renames unconditionally"), so the helper's
+  unconditional-reload path is the one that actually matters for Entity
+  Role's own common case — the practical cost is real, just for the
+  UUID-pinned case specifically, not "every rename" as a blanket claim. This
+  integration's own `_handle_source_relinked` below instead relinks the
+  *same, already-running* entity instance in place for *both* reference
+  forms, with no reload at all. Adopting the helper for UI-owned roles would
+  be a concrete behavioral regression on rename for the UUID-pinned (default)
+  case relative to what this integration already does and already tests
   (`tests/test_availability_unbound.py`; `_handle_source_relinked`'s own
   docstring).
 
@@ -67,9 +80,10 @@ helper's mandatory config-entry-scoping means it can never serve a
 YAML-owned role, so adopting it only for UI-owned roles would introduce
 exactly the source-conditional runtime behavior design §10.3 names as a
 design smell ("every behavioral rule is defined on the role record, never
-on its configuration source") — a UI-owned role would reload on every
-rename while a YAML-owned role, on the identical event, would not. The
-compatibility burden accepted by not adopting it: this integration keeps
+on its configuration source") — a UI-owned role bound by this integration's
+own default (UUID) reference form would reload on every rename while a
+YAML-owned role, on the identical event, would not. The compatibility
+burden accepted by not adopting it: this integration keeps
 maintaining its own registry-event handling rather than inheriting future
 core-side fixes/improvements to the shared helper, mitigated the same way
 the design's own risk register already covers general helper-API churn
