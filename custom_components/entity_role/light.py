@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.light import ColorMode, LightEntity
+from homeassistant.components.light import ColorMode, LightEntity, LightEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -118,13 +118,21 @@ class EntityRoleLight(RoleEntity, LightEntity):
         return self._passthrough_attr("effect_list")
 
     @property
-    def supported_features(self) -> int:
+    def supported_features(self) -> LightEntityFeature:
+        # Must be a real LightEntityFeature flag, not a plain int: HA's
+        # capability_attributes tests membership with `in`, which requires
+        # an actual IntFlag instance — confirmed by this spike's own CI
+        # (TypeError: argument of type 'int' is not a container or
+        # iterable, raised from homeassistant/components/light/__init__.py
+        # on the HA dev branch).
         source_features = (
             self.source_state.attributes.get("supported_features")
             if self.source_state
             else None
         )
-        return self.contract_intersect_bitmask("supported_features", source_features)
+        return LightEntityFeature(
+            self.contract_intersect_bitmask("supported_features", source_features)
+        )
 
     def _passthrough_attr(self, key: str) -> Any:
         if self.source_state is None:

@@ -109,6 +109,16 @@ class RoleEntity(Entity):
         roles[self._role_id] = self
         self._resync_source_state()
         self._subscribe_source()
+        if self._source_entity_id is not None:
+            # Covers both configuration sources' route back to "bound":
+            # YAML rebinds this same entity instance in place (async_rebind
+            # already clears the issue there too), but the UI/config-entry
+            # path reloads the entry — tearing this entity down and
+            # constructing a *new* instance from the updated options, which
+            # never goes through async_rebind at all. Confirmed by this
+            # spike's own CI: without this, a stale unbound issue survived
+            # a UI rebind indefinitely.
+            ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_UNBOUND}_{self._role_id}")
 
     async def async_will_remove_from_hass(self) -> None:
         self._unsubscribe_source()

@@ -71,7 +71,13 @@ async def test_creation_flow_source_step_uses_domain_filtered_selector(
     )
 
     source_field = result["data_schema"].schema[CONF_SOURCE]
-    assert source_field.config["domain"] == "light"
+    # Confirmed by this spike's own CI: EntitySelectorConfig normalizes
+    # "domain" to a plain string on HA stable but to a list on HA dev —
+    # accept either rather than assuming one.
+    domain_filter = source_field.config["domain"]
+    if isinstance(domain_filter, str):
+        domain_filter = [domain_filter]
+    assert domain_filter == ["light"]
 
 
 async def test_options_flow_replace_hardware_full_match(hass: HomeAssistant) -> None:
