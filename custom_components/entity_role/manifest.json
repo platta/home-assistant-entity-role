@@ -1,0 +1,13 @@
+{
+  "domain": "entity_role",
+  "name": "Entity Role",
+  "codeowners": ["@platta"],
+  "config_flow": true,
+  "documentation": "https://github.com/platta/home-assistant-entity-role",
+  "integration_type": "helper",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/platta/home-assistant-entity-role/issues",
+  "quality_scale": "internal",
+  "requirements": [],
+  "version": "0.1.0"
+}
