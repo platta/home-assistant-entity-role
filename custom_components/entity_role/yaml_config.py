@@ -148,8 +148,19 @@ async def async_reconcile_yaml_roles(hass: HomeAssistant, config: ConfigType | N
     for role_id in valid:
         ir.async_delete_issue(hass, DOMAIN, f"{ISSUE_YAML_RECORD_INVALID}_{role_id}")
 
-    # Removed: previously YAML-owned, no longer declared in a valid record.
-    for role_id in set(current) - set(valid):
+    # A role_id still present in the file — valid or not — is "declared".
+    # Only a role_id genuinely absent from the file is "removed" (design
+    # §10.1 R7's last-known-good contract, DECISION — ChatGPT PLAT-126
+    # 2026-09-02T12:14 ET: a role that is *still declared but now invalid*
+    # must keep its prior running binding/state, not be deleted — that
+    # distinction is exactly what declared_role_ids draws. Errors with no
+    # recoverable role_id ("<unknown>" — e.g. the role_id field itself is
+    # missing/malformed) can never match a running role and are excluded.
+    declared_role_ids = set(valid) | {e.role_id for e in errors if e.role_id != "<unknown>"}
+    invalid_but_declared = declared_role_ids - set(valid)
+
+    # Removed: previously YAML-owned, no longer declared in the file at all.
+    for role_id in set(current) - declared_role_ids:
         entity = roles.get(role_id)
         if entity is not None:
             await entity.async_remove(force_remove=True)
@@ -185,4 +196,14 @@ async def async_reconcile_yaml_roles(hass: HomeAssistant, config: ConfigType | N
         ):
             await entity.async_rebind(record[CONF_SOURCE], record[CONF_CAPABILITY_CONTRACT])
 
-    domain_data[DATA_YAML_ROLES] = valid
+    # Track last-known-good for roles still declared but currently invalid,
+    # instead of dropping them: their entity was never touched above, so
+    # their tracked record must keep pointing at what it is actually still
+    # bound to. A later reconcile with a corrected record then finds
+    # role_id already in `current` and takes the in-place rebind path
+    # above, rather than being treated as a brand-new role.
+    new_tracked: dict[str, dict[str, Any]] = dict(valid)
+    for role_id in invalid_but_declared:
+        if role_id in current:
+            new_tracked[role_id] = current[role_id]
+    domain_data[DATA_YAML_ROLES] = new_tracked

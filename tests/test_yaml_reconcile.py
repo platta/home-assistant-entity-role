@@ -136,6 +136,69 @@ async def test_record_becoming_valid_clears_its_issue(hass: HomeAssistant) -> No
     )
 
 
+async def test_existing_role_becoming_invalid_preserves_last_known_good(
+    hass: HomeAssistant,
+) -> None:
+    """DECISION — ChatGPT (PLAT-126, 2026-09-02T12:14 ET): an existing YAML
+    role whose new record is *present but invalid* must keep its prior
+    running binding/state and be flagged — not be deleted the way a role
+    genuinely omitted from the file is (design §10.1 R7's last-known-good
+    contract). See test_yaml_removal_removes_the_role above for that
+    separate, still-correct omitted-role case."""
+    good_source = create_source_entity(hass, "light", "nanoleaf", state="on")
+    await async_reconcile_yaml_roles(
+        hass,
+        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": good_source}]},
+    )
+    await hass.async_block_till_done()
+    role_entity_id = "light.kitchen_counter"
+    unique_id_before = er.async_get(hass).async_get(role_entity_id).unique_id
+
+    # role_id "kitchen_counter" is still declared, but this record is
+    # invalid (unresolvable source).
+    await async_reconcile_yaml_roles(
+        hass,
+        {
+            DOMAIN: [
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": "light.does_not_exist",
+                }
+            ]
+        },
+    )
+    await hass.async_block_till_done()
+
+    state = hass.states.get(role_entity_id)
+    assert state is not None
+    assert state.state == "on"  # still bound to the prior, good source
+    assert er.async_get(hass).async_get(role_entity_id).unique_id == unique_id_before
+    issue = ir.async_get(hass).async_get_issue(
+        DOMAIN, f"{ISSUE_YAML_RECORD_INVALID}_kitchen_counter"
+    )
+    assert issue is not None
+
+    # A corrected record updates/rebinds cleanly.
+    replacement_source = create_source_entity(hass, "light", "hue", state="off")
+    await async_reconcile_yaml_roles(
+        hass,
+        {
+            DOMAIN: [
+                {"role_id": "kitchen_counter", "role_domain": "light", "source": replacement_source}
+            ]
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert er.async_get(hass).async_get(role_entity_id).unique_id == unique_id_before
+    assert hass.states.get(role_entity_id).state == "off"
+    assert (
+        ir.async_get(hass).async_get_issue(DOMAIN, f"{ISSUE_YAML_RECORD_INVALID}_kitchen_counter")
+        is None
+    )
+
+
 async def test_duplicate_role_id_only_first_record_accepted(hass: HomeAssistant) -> None:
     source = create_source_entity(hass, "light", "nanoleaf", state="on")
     await async_reconcile_yaml_roles(

@@ -2,14 +2,14 @@
 
 **Date:** 2026-09-02
 **Author:** Sonnet (dispatched producer session)
-**Status:** Final. `pytest` (HA `stable` and `dev`, 43/43 each) and `hassfest` are green in CI on
-the final PR HEAD. `HACS validation` remains red — see §0 — and was adjudicated **non-blocking**
-for this spike's CI-readiness gate via `DECISION — ChatGPT` on PLAT-126 (2026-09-02T11:31 ET):
-the functional/architecture validation this spike exists to prove is green; the remaining failure
-is repository-publication metadata (`description`/`topics`) outside the implementation branch,
-and this ticket is an implementation spike, not a HACS publication/readiness ticket. **This
-repository is explicitly not claimed to be HACS-ready** — see §0 for what is outstanding and what
-must be verified before any future HACS-release milestone.
+**Status:** Revision in progress. A first pass was adjudicated on functional evidence
+(`DECISION — ChatGPT`, PLAT-126, 2026-09-02T11:31 ET: `HACS validation` non-blocking — see §0),
+then sent back for revision (`DECISION — ChatGPT`, 2026-09-02T12:14 ET): a real last-known-good
+defect in YAML reconciliation, fixed below (item 10/gate (d), pending CI confirmation of the new
+regression test), and README wording that overstated live HomeKit continuity as proven, corrected.
+This document is not final until that CI run is green — see item 10's row in §2 for the exact
+condition. `HACS validation` itself remains adjudicated non-blocking and this repository is still
+explicitly **not** claimed HACS-ready.
 **Authority:** accepted design `PLAT-125-hardware-role-abstraction-design.md` (Plattsoft `gitops`
 repository, merge commit `af668725e9c632b12ba9c7dfc7c4e83df631250c`). Section references below
 (§N) are to that document unless stated otherwise.
@@ -84,6 +84,20 @@ cascade hypothesis above. If any of the three still fail once metadata is presen
 genuine content defect requiring a real fix before a HACS-release milestone — not something this
 document can rule out today.
 
+**Revision round (`DECISION — ChatGPT`, PLAT-126, 2026-09-02T12:14 ET):** review of the first
+REPORT found a real correctness defect in `yaml_config.py::async_reconcile_yaml_roles`: it
+computed "removed" as `set(current) - set(valid)`, which conflated two distinct cases — a role
+genuinely omitted from the YAML file, and a role still declared in the file whose new record had
+become invalid (bad source, schema error, …). The latter case was being deleted, violating the
+last-known-good resilience behavior item 10/gate (d) exists to prove. Fixed by tracking which
+role_ids are "declared" (valid or invalid) versus genuinely absent, and only removing the latter;
+an invalid-but-still-declared role now keeps running on its prior binding (untouched, issue
+raised) rather than being torn down, and `DATA_YAML_ROLES` preserves its last-known-good record so
+a later corrected reconcile takes the in-place-rebind path rather than being treated as new. See
+`tests/test_yaml_reconcile.py::test_existing_role_becoming_invalid_preserves_last_known_good` for
+the regression test (the 5-step scenario the decision specified), and the README fix for the
+separate HomeKit-overclaim finding in that same review round.
+
 ## 1. Summary and recommendation
 
 **Recommendation: proceed to production implementation**, with the specific open items in §4
@@ -108,7 +122,7 @@ lack of live-core-source verification tooling, not evidence against the design.
 | 7 | Direct role→role recursion rejected; indirect/re-entrant cycle safety | PASS | `helpers.async_validate_source` (static reject); `entity.py::async_forward_command` (runtime guard); `tests/test_source_validation.py::test_validate_rejects_direct_role_on_role`, `tests/test_cycle_guard.py` |
 | 8 | Repeated hide/unhide + expose-setting migration, hiding optional/default-on | PARTIAL | Hide/unhide: PASS (`tests/test_hide_expose.py`). Expose-setting migration: best-effort, unverified against live core — see §4 |
 | 9 | HomeKit continuity validated live | NOT VALIDATED IN THIS ENVIRONMENT | No Apple Home client or live paired HomeKit bridge is reachable from this sandbox; connecting this spike to the production HA instance was not attempted without separate authorization — see §5 |
-| 10 | Declarative/YAML path: reload w/o restart, stable identity, malformed-file/record handling, last-known-good, revert convergence, in-place vs. recreate | PASS (in-place adopted) | `custom_components/entity_role/yaml_config.py`; `tests/test_yaml_reconcile.py`, `tests/test_reload_service.py`, `tests/test_identity.py` |
+| 10 | Declarative/YAML path: reload w/o restart, stable identity, malformed-file/record handling, last-known-good, revert convergence, in-place vs. recreate | PENDING CI (fix applied) | `custom_components/entity_role/yaml_config.py`; `tests/test_yaml_reconcile.py`, `tests/test_reload_service.py`, `tests/test_identity.py`. A real defect here (an existing role whose new record was present-but-invalid was deleted instead of kept on its last-known-good binding, conflating "invalid" with "removed") was found on review (`DECISION — ChatGPT`, PLAT-126, 2026-09-02T12:14 ET) and fixed; returns to PASS once `test_existing_role_becoming_invalid_preserves_last_known_good` is confirmed green in CI — see §0 |
 | 11 | Deployment-side Git→Flux→config→reload chain feasibility | PARTIAL | The integration-side half (the `entity_role.reload` admin service a PLAT-119-style reconciler would call) is implemented and tested. The live Flux/ConfigMap/reconciler chain in the `gitops` deployment was **not** exercised — that is deployment configuration outside this integration's repository (design §6.3, §11: "the spike writes no integration code into `gitops`"), and stands up/modifies the production cluster, which this ticket did not authorize |
 | 12 | Packaging/maintenance skeleton: manifest versioning, CI against supported HA APIs | PASS (adjudicated) | `manifest.json` (`version: 0.1.0`), `hacs.json`, `.github/workflows/validate.yml` (hassfest + HACS validation + pytest against HA `stable` and `dev`). Hassfest and pytest (stable + dev, 43/43 each) are green. `HACS validation` fails on repository-publication metadata outside this branch, adjudicated non-blocking for this spike — see §0. The repository is **not** claimed HACS-ready |
 
@@ -119,7 +133,7 @@ lack of live-core-source verification tooling, not evidence against the design.
 | (a) automation/scene/dashboard references survive a live rebind | PASS at the identity level | entity_id/unique_id proven unchanged across rebind (`test_rebind_preserves_identity_and_updates_contract`); this spike does not stand up a real automation/scene to observe end-to-end, since identity stability is the concrete property those consumers depend on and it is what is tested |
 | (b) HomeKit identity/characteristics on a real Apple Home client | NOT VALIDATED IN THIS ENVIRONMENT | see item 9 above and §5 |
 | (c) restart with missing source → unavailable+repair → clean recovery | PASS | `tests/test_availability_unbound.py` |
-| (d) YAML: reload w/o restart, restart convergence, invalid-file/-record handling, revert round trip | PASS, ConfigMap-mount question **not addressed** | `tests/test_yaml_reconcile.py`, `tests/test_reload_service.py`, `tests/test_identity.py`; the ConfigMap-mount-vs-reconciler-written-file question (design §10.2 #27) is deployment-side (item 11) and out of this repository's scope |
+| (d) YAML: reload w/o restart, restart convergence, invalid-file/-record handling, revert round trip | PENDING CI (fix applied), ConfigMap-mount question **not addressed** | `tests/test_yaml_reconcile.py`, `tests/test_reload_service.py`, `tests/test_identity.py`; see item 10's note on the last-known-good fix. The ConfigMap-mount-vs-reconciler-written-file question (design §10.2 #27) is deployment-side (item 11) and out of this repository's scope |
 | (e) UX non-regression: UI-only install exposes zero GitOps concepts | PASS by construction | The UI config/options flows (`config_flow.py`) never reference YAML, `role_id`, or any GitOps concept; `strings.json`/`translations/en.json` contain no such terms. Not independently reviewed by a second party — recorded as implemented-per-design, not externally audited |
 | (f) unit tests: rename/removal/rebind/downgrade × both sources, ownership/collision rules, hide/expose shuttling, curated attributes | PASS (light/switch/binary_sensor curated attributes); ownership/collision rule test gap — see §4 | `tests/` (all files); duplicate-`role_id` collision is tested (`test_yaml_reconcile.py::test_duplicate_role_id_only_first_record_accepted`); the UI-vs-YAML cross-ownership rule (§6.1: "UI-owned roles are ignored by YAML reconciliation entirely") has no dedicated test — see §4 |
 | (g) cycle safety: direct rejected, indirect re-entrancy guard | PASS | `tests/test_source_validation.py::test_validate_rejects_direct_role_on_role`, `tests/test_cycle_guard.py` |

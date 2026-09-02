@@ -2,17 +2,23 @@
 
 A [Home Assistant](https://www.home-assistant.io/) custom integration that gives you a
 **stable logical entity** for a hardware role — `light.kitchen_counter`, say — that keeps its
-identity (entity ID, and therefore its Apple Home / HomeKit accessory) for life, no matter what
-physical device is currently behind it.
+identity (entity ID and unique ID) for life, no matter what physical device is currently behind
+it.
 
 Replace a dead bulb, swap a Zigbee plug for a Matter one, or move a contact sensor to different
-hardware, and every automation, scene, dashboard card, and HomeKit accessory that references the
-role keeps working — untouched.
+hardware, and every automation, scene, and dashboard card that references the role keeps working
+— untouched. HomeKit accessory identity is *designed* to derive from that same stable unique ID
+(Home Assistant's own HomeKit bridge keys accessories on it), so a role is expected to carry its
+Apple Home accessory across a hardware swap the same way — but that specific claim has **not**
+been validated against a real Apple Home client yet; see the status note below.
 
 > **Status: implementation spike.** This repository currently implements the bounded proof-of-
 > concept scope defined by the accepted design (see [Design](#design) below), not a
-> production-complete v1. See `docs/PLAT-126-spike-results.md` for what has and has not been
-> validated yet.
+> production-complete v1. HA entity identity/rebind/capability-contract/declarative-path behavior
+> above is implemented and test-verified in CI; live HomeKit/Apple Home continuity across a rebind
+> is **not validated in this environment** (no Apple Home client was reachable) and remains a
+> design expectation, not a proven one. See `docs/PLAT-126-spike-results.md` for the full,
+> gate-by-gate account of what has and has not been validated.
 
 ## What it does
 
