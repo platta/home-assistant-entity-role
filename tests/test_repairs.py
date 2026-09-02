@@ -16,8 +16,10 @@ from custom_components.entity_role.const import (
     CONF_SOURCE,
     DOMAIN,
     ISSUE_UNBOUND,
+    ISSUE_UNBOUND_FIXABLE,
 )
 from custom_components.entity_role.repairs import ConfirmRepairFlow, async_create_fix_flow
+from custom_components.entity_role.yaml_config import async_reconcile_yaml_roles
 
 from .conftest import create_source_entity, role_entity_id
 
@@ -55,6 +57,35 @@ async def test_unbound_ui_role_issue_is_fixable(hass: HomeAssistant) -> None:
     assert issue is not None
     assert issue.is_fixable is True
     assert issue.data == {"role_id": entry.entry_id, "entry_id": entry.entry_id}
+    # A fixable and a non-fixable unbound issue use distinct translation
+    # keys (not one key toggling a `fix_flow` in and out) — see
+    # const.py::ISSUE_UNBOUND_FIXABLE. Confirmed by CI's real hassfest run
+    # (not reproducible locally — hassfest is not part of the pip-installed
+    # homeassistant package) that a strings.json entry may not carry both a
+    # top-level `description` and a `fix_flow`.
+    assert issue.translation_key == ISSUE_UNBOUND_FIXABLE
+
+
+async def test_yaml_owned_unbound_role_issue_is_not_fixable(hass: HomeAssistant) -> None:
+    """A YAML-owned role has no entry_id and no config/options flow to
+    deep-link into — its issue must stay the plain, non-fixable
+    ISSUE_UNBOUND (not ISSUE_UNBOUND_FIXABLE, which has no top-level
+    `description` and would render nothing informative for this case)."""
+    source = create_source_entity(hass, "light", "nanoleaf", state="on")
+    await async_reconcile_yaml_roles(
+        hass,
+        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source}]},
+    )
+    await hass.async_block_till_done()
+
+    er.async_get(hass).async_remove(source)
+    await hass.async_block_till_done()
+
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, f"{ISSUE_UNBOUND}_kitchen_counter")
+    assert issue is not None
+    assert issue.is_fixable is False
+    assert issue.translation_key == ISSUE_UNBOUND
+    assert issue.data == {"role_id": "kitchen_counter", "entry_id": None}
 
 
 async def test_fix_flow_rebinds_full_match_and_clears_issue(hass: HomeAssistant) -> None:

@@ -58,7 +58,10 @@
   "issues": {
     "role_unbound": {
       "title": "{role_name} needs replacement hardware",
-      "description": "The entity previously bound to {entity_id} was removed from the registry. The role has been preserved and is unavailable. Select Fix, or open the role's Configure button, to bind replacement hardware.",
+      "description": "The entity previously bound to {entity_id} was removed from the registry. The role has been preserved and is unavailable. Open the role's Configure button to bind replacement hardware."
+    },
+    "role_unbound_fixable": {
+      "title": "{role_name} needs replacement hardware",
       "fix_flow": {
         "step": {
           "replace_hardware": {

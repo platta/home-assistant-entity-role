@@ -55,7 +55,13 @@ from homeassistant.helpers.event import (
     async_track_state_change_event,
 )
 
-from .const import DATA_FORWARD_CHAINS, DEFAULT_HIDE_SOURCE, DOMAIN, ISSUE_UNBOUND
+from .const import (
+    DATA_FORWARD_CHAINS,
+    DEFAULT_HIDE_SOURCE,
+    DOMAIN,
+    ISSUE_UNBOUND,
+    ISSUE_UNBOUND_FIXABLE,
+)
 from .helpers import async_resolve_source_ref
 from .hide import async_hide_source, async_migrate_expose_settings, async_unhide_source
 
@@ -293,7 +299,10 @@ class RoleEntity(Entity):
             f"{ISSUE_UNBOUND}_{self._role_id}",
             is_fixable=entry_id is not None,
             severity=ir.IssueSeverity.WARNING,
-            translation_key=ISSUE_UNBOUND,
+            # Two distinct translation keys, not one used with a
+            # conditionally-present fix_flow — see const.py's
+            # ISSUE_UNBOUND_FIXABLE comment for why.
+            translation_key=ISSUE_UNBOUND_FIXABLE if entry_id is not None else ISSUE_UNBOUND,
             translation_placeholders={
                 "role_name": self.name or self._role_id,
                 "entity_id": self.entity_id or self._role_id,

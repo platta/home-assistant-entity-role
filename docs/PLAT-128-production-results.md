@@ -92,13 +92,34 @@ unit-level migration helper; end-to-end UI creation hides + migrates via the *re
 `hide_source: false` skips both; YAML default-hides; YAML `hide_source: false` opt-out), plus the
 strengthened assertion in `tests/test_config_flow.py::test_creation_flow_happy_path`.
 
+## 2.1 Item 4 addendum: a real hassfest-only defect, caught by CI where local inspection could not
+
+This repository's own CI (`Hassfest`) is not reproducible in this sandbox — hassfest ships as a
+Docker image (`ghcr.io/home-assistant/hassfest`), not part of the `homeassistant` PyPI package —
+so the first PR push relied entirely on reading a real in-tree precedent's `strings.json`
+correctly by eye, and got one exclusion rule wrong: hassfest's translation schema treats a
+top-level `description` and a `fix_flow` as mutually exclusive within one `issues.<key>` entry
+("two or more values in the same group of exclusion 'fixable'"). The first `repairs.py` pass put
+both under `issues.role_unbound`. Confirmed directly against `workday/repairs.py`'s real,
+in-tree `strings.json` (already read for item 4's implementation, re-examined once the CI failure
+pointed at it): its fixable issue entries (`bad_country`, `bad_province`) carry only `title` +
+`fix_flow`, never a sibling `description`.
+
+Fixed by splitting into two translation keys sharing the same runtime placeholders
+(`const.py::ISSUE_UNBOUND` / `ISSUE_UNBOUND_FIXABLE`), selected in
+`entity.py::_handle_source_unbound` by whether the role is UI-owned (fixable) or YAML-owned (not)
+— the same condition that already governs `is_fixable` itself. Regression-tested directly
+(`tests/test_repairs.py`: both keys' `issue.translation_key`, not just `is_fixable`, are now
+asserted) since this is exactly the kind of defect that stays invisible to `pytest` (translation
+JSON shape is a hassfest-only check, never loaded/validated by the test suite itself).
+
 ## 3. Test suite
 
-53 tests before this pass's additions → **57 passing** locally (`.venv/bin/python -m pytest -q`,
+53 tests before this pass's additions → **58 passing** locally (`.venv/bin/python -m pytest -q`,
 Python 3.12, `homeassistant==2025.1.4` per §0's caveat) after: 6 new in `test_hide_expose.py`,
-1 strengthened in `test_config_flow.py`, 4 new in `test_repairs.py`, 4 new in
-`test_ownership_isolation.py`. See the PR for the authoritative CI result against genuinely
-current HA `stable` and `dev`.
+1 strengthened in `test_config_flow.py`, 6 new in `test_repairs.py` (including the two
+translation-key regression tests from §2.1), 4 new in `test_ownership_isolation.py`. See the PR
+for the authoritative CI result against genuinely current HA `stable` and `dev`.
 
 ## 4. Not done in this pass, and why
 
