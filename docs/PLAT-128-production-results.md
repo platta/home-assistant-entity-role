@@ -32,12 +32,40 @@ equivalent to the design's own dev-branch verification. Where CI (which does res
 releases) disagrees with a claim below, CI is authoritative — see the README's own note to the
 same effect.
 
+## 0.1. Revision round (`DECISION — ChatGPT`, 2026-09-02T16:07 ET): a real gap in how §0 was addressed
+
+Independent review correctly found that items 1 and 2's "retain" decisions in the original pass
+were partly grounded in a **false** premise: that `SchemaConfigFlowHandler.options_flow_reloads`
+and `homeassistant/helpers/helper_integration.py` "don't exist". That was true only of this
+sandbox's frozen local package (`homeassistant==2025.1.4`, §0 above) — not of genuinely current
+`home-assistant/core`. §0's own caveat ("treat CI as authoritative over this stale local
+package") was written to cover exactly this kind of risk, but the first pass still reasoned from
+the stale package's *absence* of these two symbols as if it were current fact, rather than
+recognizing "not present in a frozen 2025.1-era snapshot" as inconclusive on its own.
+
+**The fix applied in this revision, not tried in the first pass:** `git clone --branch dev
+https://github.com/home-assistant/core.git`, which reaches the real repository directly and is
+**not** constrained by the frozen pip index — confirmed by the clone's own HEAD commit,
+`f01e29709bc209e54c011affd1f73fdf7a158756`, dated 2026-09-02 (today), a plausible ~2.5 years
+newer than what the frozen pip index could resolve. Every claim in the revised items 1 and 2
+below is sourced from reading files at that exact commit directly, not from the local pip
+package used for §§2-3 below (which remain sourced from the local package and are unaffected by
+this correction — the local package is current enough for the modules those items depend on,
+`homeassistant.components.homeassistant.exposed_entities` and `homeassistant.components.repairs`,
+which are long-stable and did not change shape between the two).
+
+Both items reached the **same disposition** (retain) as the first pass, but for different,
+now-accurate reasons — see the table below and the module docstrings in `config_flow.py` and
+`entity.py` for the full, line-cited reasoning. This is not a case of the correction being
+immaterial: the *previous* reasoning was factually wrong and had to be replaced, not merely
+supplemented, even though the practical outcome happened to be unchanged.
+
 ## 1. Carry-forward items (design §4 / PLAT-128 items 1–7): resolution
 
 | # | Item | Resolution | Evidence |
 |---|---|---|---|
-| 1 | Config-flow base class: adopt `SchemaConfigFlowHandler`/`options_flow_reloads`, or retain the manual flow with a documented reason | **Retained, now a verified decision** | Read `homeassistant/helpers/schema_config_entry_flow.py`, `switch_as_x/config_flow.py`, `group/config_flow.py` directly from the installed package. Confirmed `SchemaConfigFlowHandler` is real and actively used by both cited precedents; confirmed **no** `options_flow_reloads` attribute exists anywhere in that module in this installed version — `switch_as_x/__init__.py` reloads via an explicit `add_update_listener`, the same mechanism this integration already uses. Decision recorded with full reasoning in `config_flow.py`'s module docstring: retain the manual `ConfigFlow`/`OptionsFlow` base classes (current, non-deprecated, already correctly implementing every needed behavior) rather than rewrite the most consumer-visible, dynamically-branching flow surface for a boilerplate reduction with no behavioral difference. |
-| 2 | Source rename/removal tracking: align with `helper_integration.async_handle_source_entity_changes` where appropriate | **Retained, now a verified decision** | `helper_integration.py` does not exist anywhere in the installed package. `switch_as_x/__init__.py` — the exact integration the design cites as using that helper — instead implements registry-change handling manually via `async_track_entity_registry_updated_event` in this installed version, the same primitive this integration's own `_handle_registry_event` already uses. Decision recorded in `entity.py`'s module docstring: the cited helper appears to be a newer/dev-only addition this sandbox cannot resolve, is documented as config-entry-scoped (this integration serves two configuration sources uniformly), and its removal-survival behavior is caller-provided regardless — retain the existing listener. |
+| 1 | Config-flow base class: adopt `SchemaConfigFlowHandler`/`options_flow_reloads`, or retain the manual flow with a documented reason | **Retained — revised, now verified against real current `dev` source, not a stale local package** | See §0.1: the first pass's "doesn't exist" finding was wrong (stale local package); re-verified against a genuine `home-assistant/core` `dev` git clone. `options_flow_reloads` is real. Retained anyway, for a different, more specific reason: `SchemaFlowFormStep.next_step`'s callable signature has no `hass` access, and the options flow's downgrade-confirmation branch needs the candidate source's *live* state — a genuine, source-verified framework gap, not a version-verification gap. Full reasoning in `config_flow.py`'s module docstring. |
+| 2 | Source rename/removal tracking: align with `helper_integration.async_handle_source_entity_changes` where appropriate | **Retained — revised, now verified against real current `dev` source, not a stale local package** | See §0.1: the first pass's "doesn't exist" finding was wrong; re-verified directly, including reading `switch_as_x/__init__.py`'s real current usage of it. Retained anyway: the helper is inescapably config-entry-scoped (`helper_config_entry_id` is required), so it can never serve a YAML-owned role — adopting it only for UI-owned roles would introduce the source-conditional behavior design §10.3 calls a design smell, and would also be a concrete rename-time reload/flicker regression relative to this integration's existing zero-reload in-place relink. Full reasoning in `entity.py`'s module docstring. A genuinely separate gap surfaced during this check — device-linkage (design §4) was never implemented for either configuration source — filed as `FOLLOW-UP — Sonnet`, not fixed here. |
 | 3 | Expose-settings migration: replace/validate against current supported APIs | **Fixed — real, verified API; two additional real defects found and fixed** | See §2 below. |
 | 4 | Repair flow/deep-link for an unbound source | **Implemented** | `repairs.py::UnboundSourceFixFlow`, modeled directly on a real in-tree fix flow that reconfigures a config entry from a repair (`homeassistant/components/workday/repairs.py`). Reuses `helpers.py`'s validation/classification functions so the options flow and the repair fix flow cannot silently diverge. `ISSUE_UNBOUND` is now `is_fixable=True` for a UI-owned role (entry_id present); a YAML-owned role's issue stays informational (`is_fixable=False`) since there is no config/options flow to deep-link into. Tests: `tests/test_repairs.py` (4 tests: full-match rebind through the fix flow, downgrade-confirmation branch, issue clearing, YAML fallback to `ConfirmRepairFlow`). |
 | 5 | Dedicated UI-vs-YAML ownership isolation/collision regression coverage | **Added** | `tests/test_ownership_isolation.py` (4 tests): a UI-owned role survives a YAML reconcile to empty and to an unrelated record set; removing a UI-owned entry does not affect a YAML-owned role; the two sources' identity namespaces (config entry ID vs. author-declared `role_id`) are independently verified, not merely asserted "by construction". |

@@ -14,30 +14,79 @@ registry_event` below is this integration's own registry listener
 (`entity_registry.async_track_entity_registry_updated_event` +
 `entity_registry.async_validate_entity_id`), not the design-cited
 `homeassistant.helpers.helper_integration.async_handle_source_entity_changes`.
-The spike could not check that helper's current shape at all (no outbound
-access); this pass installed a real, current homeassistant package (see
-hide.py's module docstring) and checked directly: `helper_integration.py`
-does not exist anywhere in that installed version, and `switch_as_x` — the
-exact integration the design cites as already using it — instead implements
-registry-change handling manually in that same version
-(`switch_as_x/__init__.py::async_registry_updated`, driven by
-`async_track_entity_registry_updated_event` — the same primitive used
-below), reload-on-rename and remove-on-removal. That helper therefore
-appears to be a newer/dev-only addition this sandbox's package index cannot
-resolve (see the README's environment-constraints note), not something
-already available on a currently-shipping stable release this integration's
-own CI matrix must also support.
 
-Decision: retain this integration's own listener. Beyond the version
-question, it has to serve both configuration sources uniformly (design
-§6.1's "one role model") and must *survive* removal rather than delete the
-role (design §8's asymmetry vs. switch_as_x) — `async_handle_source_entity_
-changes` is documented as config-entry-scoped and, per its own docstring,
-offers removal-survival only as a caller-provided callback, i.e. this
-integration would still be writing and owning that behavior itself either
-way. Revisit if a future pass confirms the helper has shipped on the HA
-stable release this repository's CI targets *and* still fits a role bound
-from either configuration source.
+**Revision history on this decision:** a first pass claimed
+`helper_integration.py` "does not exist" at all, based on a
+pip-installed `homeassistant==2025.1.4` package this sandbox's package index
+is frozen at (see hide.py's module docstring). `DECISION — ChatGPT`
+(PLAT-128, 2026-09-02T16:07 ET) correctly rejected that: the module is real
+on current `dev`, modified 2026-08-20. This revision re-verified directly
+against a real, current `home-assistant/core` clone (`git clone --branch
+dev`, HEAD `f01e29709bc209e54c011affd1f73fdf7a158756`, dated 2026-09-02 —
+`git clone` reaches the real repository directly, unconstrained by this
+sandbox's frozen pip index) — both `helper_integration.py` and
+`switch_as_x/__init__.py` were read in full at that commit, not assumed.
+
+Confirmed, precisely:
+
+- `async_handle_source_entity_changes` is real, current, and genuinely used
+  by `switch_as_x/__init__.py::async_setup_entry` today (verified: it wraps
+  the whole registry-change lifecycle for that integration's config entry).
+- It is **inescapably config-entry-scoped**: `helper_config_entry_id` is a
+  required keyword argument, used internally both for
+  `hass.config_entries.async_reload(helper_config_entry_id)` and for
+  `entity_registry.entities.get_entries_for_config_entry_id(
+  helper_config_entry_id)` (`helper_integration.py` lines 63-122). A
+  YAML-owned role has no config entry at all — this helper has no
+  applicability to that configuration source, full stop, not a matter of
+  preference.
+- Survive-not-delete on removal (design §8's asymmetry vs. switch_as_x) *is*
+  achievable through the helper's own `source_entity_removed` callback —
+  its docstring explicitly anticipates "ask the user to select a new source
+  entity" as a valid use (line 42-44). The first pass's docstring understated
+  this; corrected here. This is not, by itself, a reason to prefer or avoid
+  the helper.
+- The concrete behavioral cost of adopting it for UI-owned roles specifically:
+  read together, `switch_as_x`'s own `set_source_entity_id_or_uuid` callback
+  (which calls `hass.config_entries.async_schedule_reload` unconditionally)
+  and the helper's own UUID-reference fallback (`await hass.config_entries.
+  async_reload(...)`, when the stored reference is not a plain entity_id)
+  mean **every rename of a bound source reloads the entire config entry** —
+  tear down and reconstruct the role entity — regardless of which reference
+  form is used. This integration's own `_handle_source_relinked` below
+  instead relinks the *same, already-running* entity instance in place, with
+  no reload at all. Adopting the helper for UI-owned roles would be a
+  concrete behavioral regression on rename for that path relative to what
+  this integration already does and already tests
+  (`tests/test_availability_unbound.py`; `_handle_source_relinked`'s own
+  docstring).
+
+Decision: retain this integration's own unified listener for both
+configuration sources. The structural reason is the strongest one: the
+helper's mandatory config-entry-scoping means it can never serve a
+YAML-owned role, so adopting it only for UI-owned roles would introduce
+exactly the source-conditional runtime behavior design §10.3 names as a
+design smell ("every behavioral rule is defined on the role record, never
+on its configuration source") — a UI-owned role would reload on every
+rename while a YAML-owned role, on the identical event, would not. The
+compatibility burden accepted by not adopting it: this integration keeps
+maintaining its own registry-event handling rather than inheriting future
+core-side fixes/improvements to the shared helper, mitigated the same way
+the design's own risk register already covers general helper-API churn
+(R22) — CI against both HA `stable` and `dev`.
+
+**Separately-scoped finding, not fixed in this revision (see the
+FOLLOW-UP comment on PLAT-128 in Jira):** neither this listener nor the
+helper's device-relinking behavior is actually exercised today — this
+integration does not set a role entity's `device_id` to its source's
+device at all, for either configuration source, despite design §4
+("Device linkage: like switch_as_x, the logical entity sets its registry
+device_id to the source's device, so it appears on the physical device's
+page"). That gap predates this ticket (present since the PLAT-126 spike)
+and is independent of the adopt-vs-retain question above either way; fixing
+it is out of this item's scope (rename/removal *tracking API* alignment,
+not new functionality) and the reviewing `DECISION` explicitly asked not to
+broaden scope unnecessarily.
 """
 
 from __future__ import annotations

@@ -2,47 +2,91 @@
 
 Built on the classic config_entries.ConfigFlow / OptionsFlow base classes
 with explicit voluptuous schemas, rather than `SchemaConfigFlowHandler` /
-`options_flow_reloads=True`. PLAT-128 carry-forward item 1 ("verify current
-HA helper/config-flow conventions and decide whether to adopt
-SchemaConfigFlowHandler... or retain the manual flow with a documented
-reason"): the spike could not verify this at all (no outbound repository
-access). This pass installed a real, current homeassistant package (see
-hide.py's module docstring for the environment-constraints note) and read
-`homeassistant/helpers/schema_config_entry_flow.py` plus its two real
-consumers, `switch_as_x/config_flow.py` and `group/config_flow.py`, directly
-— so this is now a verified decision, not an unresolved gap:
+`options_flow_reloads=True`. PLAT-128 carry-forward item 1.
 
-- `SchemaConfigFlowHandler` is confirmed real, current, and actively used by
-  two of the exact core precedents this design already cites (switch_as_x,
-  group) — not a hypothetical convenience.
-- No `options_flow_reloads` attribute or keyword exists anywhere in that
-  module in the installed version; `switch_as_x/__init__.py` reloads on
-  options change the same way this integration already does — an explicit
-  `entry.add_update_listener(...)` (`config_entry_update_listener` there,
-  `_async_update_listener` here) — so that specific design citation appears
-  to describe a newer/dev-only refinement this sandbox's package index
-  cannot resolve (see the README's environment-constraints note), not a
-  currently-shipping difference in how reload-on-options-change works.
-- `SchemaFlowFormStep` supports the dynamic pieces this integration's flows
-  need (an async `next_step` callable for the downgrade-confirmation branch,
-  `validate_user_input` for raising a `SchemaFlowError`, async
-  `suggested_values`) — adopting it here is a real option, not blocked by a
-  shape mismatch.
+**Revision history on this decision, both against real evidence, reaching
+the same conclusion for different (and progressively more specific)
+reasons:**
 
-Decision: retain the manual `ConfigFlow`/`OptionsFlow` base classes. Both are
-current, fully-supported, non-deprecated core APIs (confirmed directly, not
-assumed) — this is not the "could not verify, played it safe" position the
-spike was in. The manual flow already correctly implements every behavior
-`SchemaConfigFlowHandler` would provide here (contract seeding from live
-state, downgrade-confirmation branching, hide/expose side effects,
-reload-on-options-change) and is covered by this repository's own test
-suite; rewriting a multi-step, dynamically-branching, side-effecting flow —
-the most consumer-visible surface in this integration — for a boilerplate
-reduction with no behavioral difference was judged unwarranted risk for a
-production pass, not a limitation to accept silently. Revisit if a future
-pass finds a concrete reason `SchemaConfigFlowHandler` specifically is
-required (e.g. a core policy change), rather than migrating for its own
-sake.
+*First pass* concluded `options_flow_reloads` "doesn't exist", based on a
+pip-installed `homeassistant==2025.1.4` package — this sandbox's package
+index does not resolve anything newer (see hide.py's module docstring).
+That specific finding was **wrong**: `DECISION — ChatGPT` (PLAT-128,
+2026-09-02T16:07 ET) correctly called it out, quoting `options_flow_reloads:
+bool = False` from a genuinely current `home-assistant/core` `dev` checkout.
+
+*This revision* re-verified directly against a real, current
+`home-assistant/core` clone (`git clone --branch dev`, HEAD
+`f01e29709bc209e54c011affd1f73fdf7a158756`, dated 2026-09-02 — this
+sandbox's frozen pip index has no version of the package itself that new,
+but `git clone` reaches the real repository directly, unconstrained by that
+index) rather than the stale local package. Confirmed:
+
+- `SchemaConfigFlowHandler.options_flow_reloads` is real, and when `True`
+  selects `SchemaOptionsFlowHandlerWithReload` automatically —
+  `schema_config_entry_flow.py` lines 308-343.
+- `switch_as_x` and `group` (the design's own cited precedents) both use
+  `SchemaConfigFlowHandler` today, confirmed by reading their real, current
+  `config_flow.py` files directly, not assumed from the design's citation.
+- `SchemaConfigFlowHandler.async_create_entry` always stores the whole
+  flow's accumulated state under `entry.options` (`data={}` — line 421-422);
+  `group/__init__.py::async_setup_entry` reads its role_domain equivalent
+  from `entry.options["group_type"]` for exactly this reason (verified:
+  `group/__init__.py` line 167). Relocating `CONF_ROLE_DOMAIN` from
+  `entry.data` to `entry.options` would be required to adopt this framework
+  here, but is a safe, precedented, mechanical change (group does exactly
+  this) — not by itself a reason to retain the manual flow, unlike the
+  impression the first pass may have given.
+- Contract seeding (`_seed_contract`, a value derived from live source
+  state, not itself a user-entered field) can be injected into the
+  accumulated options from `SchemaFlowFormStep.validate_user_input`'s
+  return value — `SchemaCommonFlowHandler._async_form_step` merges whatever
+  dict `validate_user_input` returns via a plain `values.update(user_input)`
+  (line ~192-195), with no restriction to schema-declared keys. This is a
+  legitimate, if less obvious, use of the documented contract, not a hack.
+
+**The one genuine, still-standing structural blocker, found by reading the
+framework source line-by-line rather than assuming a fix once the two
+points above turned out to be tractable:** `SchemaFlowFormStep.next_step`,
+when a callable, has the signature
+`Callable[[dict[str, Any]], Coroutine[Any, Any, str | None]]` and is invoked
+as `await form_step.next_step(self._options)` — the *accumulated options
+dict only*, with no access to `hass` or the flow handler
+(`schema_config_entry_flow.py` lines 68-78, 226-231). The options flow's
+"Replace hardware" step must decide whether to route to a downgrade
+confirmation step based on the **live capability state of the newly
+selected candidate source** (`helpers.compare_contract_to_source`, which
+calls `hass.states.get(...)`) — a decision `next_step` cannot make with the
+information it is given. Neither `switch_as_x` nor `group` (nor anything
+found while reading `schema_config_entry_flow.py`'s own consumers) has a
+next-step decision that depends on live hass state rather than only the
+options accumulated so far, so there is no demonstrated real precedent for
+this need. The two available workarounds — stashing the decision as an
+extra key in the shared options dict during `validate_user_input` and
+popping it back out inside `next_step` before it can leak into the
+persisted entry, or monkey-patching `async_get_options_flow` after class
+definition to substitute a hand-written options flow for the auto-generated
+schema-based one (`SchemaConfigFlowHandler.__init_subclass__` overwrites
+any `async_get_options_flow` defined directly in a subclass body, so this
+cannot be done cleanly through inheritance either) — are both mechanically
+real but neither is demonstrated anywhere in real core usage, and both are
+templates for the *outward-facing config/options surface a normal user
+touches on every single hardware swap* — a worse place to carry
+unprecedented technique than most.
+
+**Decision: retain the manual `ConfigFlow`/`OptionsFlow` base classes for
+both flows.** Not because the framework doesn't exist or wasn't checked —
+it does, and was, against the real source, twice — but because unifying the
+creation and options flows under one authoring style (this integration
+always has, and design §6.1/§10.3 treat behavioral consistency as a
+first-class constraint) means the options flow's genuine, hass-state-
+dependent branching requirement is the binding constraint on *both* flows,
+not just itself: `SchemaConfigFlowHandler` cannot cleanly host a manually-
+authored options flow alongside its own schema-based config flow, so
+"migrate config, keep options manual" is not a clean middle path either.
+Revisit if `next_step` (or an equivalent) ever gains handler/hass access, or
+if a future pass is willing to accept one of the two workarounds above with
+its tradeoffs made explicit — not "for its own sake".
 """
 
 from __future__ import annotations
