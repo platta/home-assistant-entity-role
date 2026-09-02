@@ -1,0 +1,68 @@
+{
+  "title": "Entity Role",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Create a role",
+        "description": "A role is a stable logical entity that proxies a physical entity. Pick what kind of role to create.",
+        "data": {
+          "role_domain": "Role type"
+        }
+      },
+      "source": {
+        "title": "Name and bind",
+        "description": "Choose a name and the implementation entity this role should currently proxy. You can replace it with different hardware later without losing the role's identity.",
+        "data": {
+          "name": "Name",
+          "source": "Implementation entity",
+          "device_class": "Device class"
+        }
+      },
+      "confirm": {
+        "title": "Confirm",
+        "description": "Binding to {source}. Seeded capability contract: {contract}.",
+        "data": {
+          "hide_source": "Hide the implementation entity"
+        }
+      }
+    },
+    "error": {
+      "source_not_found": "That entity could not be found in the entity registry.",
+      "domain_mismatch": "That entity is not in the role's domain.",
+      "role_on_role_rejected": "A role cannot be bound to another role (direct role-on-role bindings are rejected)."
+    }
+  },
+  "options": {
+    "step": {
+      "replace_hardware": {
+        "title": "Replace hardware",
+        "description": "Currently bound to {current_source}. Choose the replacement implementation entity.",
+        "data": {
+          "source": "New implementation entity"
+        }
+      },
+      "confirm_downgrade": {
+        "title": "Confirm capability downgrade",
+        "description": "The new hardware cannot deliver: {lost_capabilities}. These capabilities will be removed from the role's contract.",
+        "data": {
+          "confirm": "I understand, proceed"
+        }
+      }
+    },
+    "error": {
+      "source_not_found": "That entity could not be found in the entity registry.",
+      "domain_mismatch": "That entity is not in the role's domain.",
+      "role_on_role_rejected": "A role cannot be bound to another role (direct role-on-role bindings are rejected)."
+    }
+  },
+  "issues": {
+    "role_unbound": {
+      "title": "{role_name} needs replacement hardware",
+      "description": "The entity previously bound to {entity_id} was removed from the registry. The role has been preserved and is unavailable. Open the role's Configure button to bind replacement hardware."
+    },
+    "yaml_record_invalid": {
+      "title": "Invalid entity_role YAML record: {role_id}",
+      "description": "This record was not applied ({reason}); every other declared role is unaffected. Fix the record in the source file and reload."
+    }
+  }
+}

@@ -1,0 +1,7 @@
+reload:
+  name: Reload
+  description: >-
+    Re-read entity_role: from configuration.yaml and reconcile running
+    YAML-owned roles to it — create, rebind, or remove roles as declared,
+    without restarting Home Assistant. Roles created through the UI are
+    unaffected.
