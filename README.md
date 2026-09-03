@@ -63,6 +63,11 @@ entity_role:
     hide_source: true
 ```
 
+An empty declaration — `entity_role: []`, or an `!include` pointing at a file that is empty
+or contains only comments — is valid and means zero YAML-owned roles; it will not fail HA
+startup. This is the expected state for a fresh GitOps install or a recovery/bootstrap
+checkout before any household roles have been declared yet.
+
 ## Recovering an unbound role
 
 If a role's bound hardware is removed from Home Assistant, the role survives unavailable and

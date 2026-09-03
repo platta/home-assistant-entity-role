@@ -54,6 +54,38 @@ ROLE_SCHEMA = vol.Schema(
 )
 
 
+def _ensure_role_records(value: Any) -> list[Any]:
+    """Normalize the raw `entity_role:` YAML value to a list of records.
+
+    Delegates to `cv.ensure_list` for the general case, but first treats a
+    blank/absent value as "zero declared roles" rather than letting
+    `cv.ensure_list` wrap it into a single-item list. This matters because
+    a valid empty declaration — `entity_role: []` directly, or an
+    `!include` resolving to an empty file — must mean zero roles, not one
+    empty role record:
+
+    * `entity_role:` with no value parses to `None`.
+    * `homeassistant.util.yaml.loader._include_yaml` itself substitutes an
+      empty *dict* (`NodeDictClass()`) whenever the included file's content
+      parses to `None` — e.g. a fresh GitOps-owned file that is empty or
+      contains only comments, the bootstrap/recovery state this integration
+      must support (see PLAT-144).
+
+    Without this, `cv.ensure_list({})` wraps that empty dict into `[{}]`,
+    and per-record validation against `ROLE_SCHEMA` then fails with
+    `required key not provided` for every required field, exactly as if a
+    single, entirely blank role record had been declared. A genuine
+    single-record shorthand (a non-empty dict) still wraps normally, and an
+    explicit list — empty or not — passes through unchanged.
+    """
+    if value is None or value == {}:
+        return []
+    return cv.ensure_list(value)
+
+
+ROLE_LIST_SCHEMA = vol.All(_ensure_role_records, [ROLE_SCHEMA])
+
+
 class _RecordError(Exception):
     def __init__(self, role_id: str, reason: str) -> None:
         super().__init__(reason)
