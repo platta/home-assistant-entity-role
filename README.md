@@ -12,13 +12,17 @@ hardware, and every automation, scene, and dashboard card that references the ro
 Apple Home accessory across a hardware swap the same way — but that specific claim has **not**
 been validated against a real Apple Home client yet; see the status note below.
 
-> **Status: implementation spike.** This repository currently implements the bounded proof-of-
-> concept scope defined by the accepted design (see [Design](#design) below), not a
-> production-complete v1. HA entity identity/rebind/capability-contract/declarative-path behavior
-> above is implemented and test-verified in CI; live HomeKit/Apple Home continuity across a rebind
-> is **not validated in this environment** (no Apple Home client was reachable) and remains a
-> design expectation, not a proven one. See `docs/PLAT-126-spike-results.md` for the full,
-> gate-by-gate account of what has and has not been validated.
+> **Status: v1, community-quality.** PLAT-126's implementation spike has been productionized
+> (PLAT-128): all §4 carry-forward items — config-flow convention verification, source
+> rename/removal tracking, expose-settings migration against the real current HA API, an
+> HA-native repair-issue deep-link for an unbound role, and dedicated UI-vs-YAML ownership
+> regression coverage — are resolved or explicitly, documentedly retained. HA entity
+> identity/rebind/capability-contract/declarative-path behavior is implemented and test-verified
+> in CI. Two things remain **not validated**, honestly: live HomeKit/Apple Home continuity across
+> a rebind (no Apple Home client was reachable from this environment) stays a design expectation,
+> not a proven one; and this repository is not yet claiming HACS-readiness — see
+> [HACS status](#hacs-status) below. See `docs/PLAT-126-spike-results.md` for the spike's
+> gate-by-gate account and `docs/PLAT-128-production-results.md` for this pass's.
 
 ## What it does
 
@@ -59,17 +63,39 @@ entity_role:
     hide_source: true
 ```
 
-## Supported domains (v1 spike)
+## Recovering an unbound role
+
+If a role's bound hardware is removed from Home Assistant, the role survives unavailable and
+raises a repair issue (Settings → Repairs). Selecting **Fix** on that issue opens the same
+"pick a replacement" step as the role's own Configure → Options flow, directly from the repair
+— no need to separately find the role first.
+
+## Supported domains (v1)
 
 `light`, `switch` (including the `outlet` device class), `binary_sensor` (e.g. `door`/`window`).
 
 ## Design
 
-This integration implements the bounded spike scope of the accepted design
+This integration implements the accepted design
 `PLAT-125-hardware-role-abstraction-design.md` (Plattsoft `gitops` repository,
 merge commit `af668725e9c632b12ba9c7dfc7c4e83df631250c`). That document is the authoritative
-architecture reference; see `docs/PLAT-126-spike-results.md` in this repository for how this
-implementation maps onto its spike gates.
+architecture reference. `docs/PLAT-126-spike-results.md` records the initial bounded spike's
+gate-by-gate results; `docs/PLAT-128-production-results.md` records this production pass —
+including two verified decisions to retain the spike's manual config-flow base classes and
+custom source-tracking listener rather than adopt newer core helpers cited in the design, with
+the evidence behind each.
+
+## HACS status
+
+Not yet claimed HACS-ready. `hassfest` and the test suite (HA stable + dev) are green; **HACS
+validation** currently fails only on repository-publication metadata this integration's own code
+cannot set — the repository has no description or topics yet (`hacsjson`, `integration_manifest`,
+and `brands` are believed to be a metadata-gated cascade from that, per `docs/PLAT-126-spike-
+results.md` §0's negative-result test, not independent content defects). Setting a description
+and topics (`home-assistant`, `hacs-integration`, `custom-integration`, `home-automation`) via
+repository Settings or `gh repo edit` — outside what a repository-scoped `git push` can do — would
+resolve this; see `docs/PLAT-128-production-results.md` for the exact attempted command and why
+it was not run unattended.
 
 ## Installation
 
@@ -80,12 +106,17 @@ Assistant `config/custom_components/` directory and restarting.
 ## Development
 
 ```console
-pip install -r requirements_test.txt
-pytest
+python3 -m venv .venv && .venv/bin/python -m pip install -r requirements_test.txt
+.venv/bin/python -m pytest
 ```
 
 CI runs `hassfest`, HACS validation, and the test suite against both the current stable and the
-`dev` (RC) branch of Home Assistant core.
+`dev` (RC) branch of Home Assistant core — always resolving genuinely current package releases.
+A local sandboxed dev environment's package index may be frozen well behind the real PyPI/GitHub
+state (observed directly during PLAT-128: a `pip install homeassistant` with no version pin
+resolved no newer than a `2025.1.4` release from one such index, versus this repository's own CI
+correctly resolving the real current stable/dev releases) — treat CI, not a local install's
+version, as the authority on "current supported HA APIs" if the two ever disagree.
 
 ## License
 

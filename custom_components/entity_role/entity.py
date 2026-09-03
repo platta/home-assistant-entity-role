@@ -8,6 +8,99 @@ entity_registry.async_validate_entity_id (helpers.async_resolve_source_ref),
 and — per design §10.1 R3 — a re-entrant command-forwarding guard for
 indirect role→…→role cycles (direct role-on-role bindings are rejected
 earlier, at bind-validation time; see helpers.async_validate_source).
+
+**Rename/removal tracking (PLAT-128 carry-forward item 2)**: `_handle_
+registry_event` below is this integration's own registry listener
+(`entity_registry.async_track_entity_registry_updated_event` +
+`entity_registry.async_validate_entity_id`), not the design-cited
+`homeassistant.helpers.helper_integration.async_handle_source_entity_changes`.
+
+**Revision history on this decision:** a first pass claimed
+`helper_integration.py` "does not exist" at all, based on a
+pip-installed `homeassistant==2025.1.4` package this sandbox's package index
+is frozen at (see hide.py's module docstring). `DECISION — ChatGPT`
+(PLAT-128, 2026-09-02T16:07 ET) correctly rejected that: the module is real
+on current `dev`, modified 2026-08-20. This revision re-verified directly
+against a real, current `home-assistant/core` clone (`git clone --branch
+dev`, HEAD `f01e29709bc209e54c011affd1f73fdf7a158756`, dated 2026-09-02 —
+`git clone` reaches the real repository directly, unconstrained by this
+sandbox's frozen pip index) — both `helper_integration.py` and
+`switch_as_x/__init__.py` were read in full at that commit, not assumed.
+
+Confirmed, precisely:
+
+- `async_handle_source_entity_changes` is real, current, and genuinely used
+  by `switch_as_x/__init__.py::async_setup_entry` today (verified: it wraps
+  the whole registry-change lifecycle for that integration's config entry).
+- It is **inescapably config-entry-scoped**: `helper_config_entry_id` is a
+  required keyword argument, used internally both for
+  `hass.config_entries.async_reload(helper_config_entry_id)` and for
+  `entity_registry.entities.get_entries_for_config_entry_id(
+  helper_config_entry_id)` (`helper_integration.py` lines 63-122). A
+  YAML-owned role has no config entry at all — this helper has no
+  applicability to that configuration source, full stop, not a matter of
+  preference.
+- Survive-not-delete on removal (design §8's asymmetry vs. switch_as_x) *is*
+  achievable through the helper's own `source_entity_removed` callback —
+  its docstring explicitly anticipates "ask the user to select a new source
+  entity" as a valid use (line 42-44). The first pass's docstring understated
+  this; corrected here. This is not, by itself, a reason to prefer or avoid
+  the helper.
+- The concrete behavioral cost of adopting it for UI-owned roles specifically
+  — corrected per `DECISION — ChatGPT` (PLAT-128, 2026-09-02T16:29 ET): a
+  prior revision of this docstring overstated this as "every rename reloads
+  regardless of reference form", which conflated the helper's own logic with
+  `switch_as_x`'s particular callback choice. What the helper itself actually
+  does (`helper_integration.py`'s `async_registry_updated`, the "entity_id"
+  in `data["changes"]` branch) is form-dependent: for a **plain entity_id**
+  reference, it calls the caller-supplied `set_source_entity_id_or_uuid`
+  callback and does *not* itself reload — whether that callback reloads is
+  up to the caller (`switch_as_x`'s own callback happens to call
+  `hass.config_entries.async_schedule_reload` anyway, but that is
+  `switch_as_x`'s choice, not something the helper forces). For a **registry
+  UUID** reference, the helper *unconditionally* calls
+  `await hass.config_entries.async_reload(helper_config_entry_id)` itself —
+  not customizable via callback. This integration's own recommended and
+  default persisted form is the UUID (design §6.4: "pin the UUID, because it
+  survives entity_id renames unconditionally"), so the helper's
+  unconditional-reload path is the one that actually matters for Entity
+  Role's own common case — the practical cost is real, just for the
+  UUID-pinned case specifically, not "every rename" as a blanket claim. This
+  integration's own `_handle_source_relinked` below instead relinks the
+  *same, already-running* entity instance in place for *both* reference
+  forms, with no reload at all. Adopting the helper for UI-owned roles would
+  be a concrete behavioral regression on rename for the UUID-pinned (default)
+  case relative to what this integration already does and already tests
+  (`tests/test_availability_unbound.py`; `_handle_source_relinked`'s own
+  docstring).
+
+Decision: retain this integration's own unified listener for both
+configuration sources. The structural reason is the strongest one: the
+helper's mandatory config-entry-scoping means it can never serve a
+YAML-owned role, so adopting it only for UI-owned roles would introduce
+exactly the source-conditional runtime behavior design §10.3 names as a
+design smell ("every behavioral rule is defined on the role record, never
+on its configuration source") — a UI-owned role bound by this integration's
+own default (UUID) reference form would reload on every rename while a
+YAML-owned role, on the identical event, would not. The compatibility
+burden accepted by not adopting it: this integration keeps
+maintaining its own registry-event handling rather than inheriting future
+core-side fixes/improvements to the shared helper, mitigated the same way
+the design's own risk register already covers general helper-API churn
+(R22) — CI against both HA `stable` and `dev`.
+
+**Separately-scoped finding, not fixed in this revision (see the
+FOLLOW-UP comment on PLAT-128 in Jira):** neither this listener nor the
+helper's device-relinking behavior is actually exercised today — this
+integration does not set a role entity's `device_id` to its source's
+device at all, for either configuration source, despite design §4
+("Device linkage: like switch_as_x, the logical entity sets its registry
+device_id to the source's device, so it appears on the physical device's
+page"). That gap predates this ticket (present since the PLAT-126 spike)
+and is independent of the adopt-vs-retain question above either way; fixing
+it is out of this item's scope (rename/removal *tracking API* alignment,
+not new functionality) and the reviewing `DECISION` explicitly asked not to
+broaden scope unnecessarily.
 """
 
 from __future__ import annotations
@@ -16,16 +109,24 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from homeassistant.core import Context, Event, EventStateChangedData, State, callback
+from homeassistant.core import Context, Event, State, callback
 from homeassistant.helpers import entity_registry as er, issue_registry as ir
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import (
+    EventStateChangedData,
     async_track_entity_registry_updated_event,
     async_track_state_change_event,
 )
 
-from .const import DATA_FORWARD_CHAINS, DOMAIN, ISSUE_UNBOUND
+from .const import (
+    DATA_FORWARD_CHAINS,
+    DEFAULT_HIDE_SOURCE,
+    DOMAIN,
+    ISSUE_UNBOUND,
+    ISSUE_UNBOUND_FIXABLE,
+)
 from .helpers import async_resolve_source_ref
+from .hide import async_hide_source, async_migrate_expose_settings, async_unhide_source
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,6 +151,7 @@ class RoleEntity(Entity):
         source_entity_id: str | None,
         contract: dict[str, Any],
         source_ref: str | None = None,
+        hide_source: bool = DEFAULT_HIDE_SOURCE,
     ) -> None:
         self._role_id = role_id
         self._role_domain = role_domain
@@ -62,6 +164,7 @@ class RoleEntity(Entity):
         self._source_ref: str | None = source_ref if source_ref is not None else source_entity_id
         self._source_entity_id = source_entity_id
         self._contract = dict(contract)
+        self._hide_source = hide_source
         self._source_state: State | None = None
         self._remove_state_listener: Callable[[], None] | None = None
         self._remove_registry_listener: Callable[[], None] | None = None
@@ -81,6 +184,10 @@ class RoleEntity(Entity):
     @property
     def contract(self) -> dict[str, Any]:
         return dict(self._contract)
+
+    @property
+    def hide_source(self) -> bool:
+        return self._hide_source
 
     @property
     def source_state(self) -> State | None:
@@ -119,6 +226,47 @@ class RoleEntity(Entity):
             # spike's own CI: without this, a stale unbound issue survived
             # a UI rebind indefinitely.
             ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_UNBOUND}_{self._role_id}")
+            self._apply_hide_source_policy(old_source_entity_id=None)
+
+    def _apply_hide_source_policy(self, *, old_source_entity_id: str | None) -> None:
+        """Hide the newly-bound source and migrate its expose settings onto
+        this role; unhide a previous source no longer bound (design §10.1 R1
+        / carry-forward item 3).
+
+        Called both from async_added_to_hass (initial bind for either
+        configuration source — `old_source_entity_id` is always None there,
+        since a freshly-constructed entity has no prior binding of its own)
+        and from async_rebind (every subsequent rebind for either source,
+        where the caller still knows the actual previous source). The UI
+        options flow's "unhide the old source" step is handled separately,
+        in config_flow.py's `_apply_rebind`, *before* the options-change
+        reload that tears down and reconstructs this entity — a fresh
+        instance never learns what its predecessor was bound to, so that
+        specific step cannot live here for the UI path.
+
+        Idempotent by construction (hiding an already-hidden entity, or
+        re-migrating identical settings, is a no-op), so this runs
+        unconditionally on every add rather than tracking "was this
+        genuinely the first bind" as separate persisted state — the accepted
+        simplification is that a plain reload with an unchanged source
+        re-copies the source's current settings onto the role, which would
+        overwrite a manual expose-setting change made directly on the role
+        afterward. Documented rather than silently accepted: this integration
+        does not currently distinguish that case from a real rebind.
+        """
+        if not self._hide_source or self.hass is None:
+            return
+        if (
+            old_source_entity_id is not None
+            and old_source_entity_id != self._source_entity_id
+        ):
+            async_unhide_source(self.hass, old_source_entity_id)
+        if self._source_entity_id is not None and self._source_entity_id != old_source_entity_id:
+            async_hide_source(self.hass, self._source_entity_id)
+            if self.entity_id:
+                async_migrate_expose_settings(
+                    self.hass, self._source_entity_id, self.entity_id
+                )
 
     async def async_will_remove_from_hass(self) -> None:
         self._unsubscribe_source()
@@ -188,8 +336,17 @@ class RoleEntity(Entity):
 
     async def _handle_source_unbound(self) -> None:
         """Source removed from the registry (design §8): survive, go
-        unavailable, and raise a repair issue that deep-links back into the
-        replace-hardware options step."""
+        unavailable, and raise a repair issue.
+
+        For a UI-owned role (a config entry backs this platform instance),
+        the issue is fixable and deep-links straight into a "pick a
+        replacement" flow (repairs.py::UnboundSourceFixFlow) — PLAT-128
+        carry-forward item 4, previously UNVERIFIED in the design (§10.2
+        #26) and unimplemented in the spike. A YAML-owned role has no
+        entry_id and no config/options flow to deep-link into at all — its
+        fix is "edit the file and reload", so its issue stays informational
+        (is_fixable=False), exactly as before.
+        """
         _LOGGER.warning(
             "%s: bound source is no longer resolvable, role is now unbound",
             self.entity_id,
@@ -203,9 +360,12 @@ class RoleEntity(Entity):
             self.hass,
             DOMAIN,
             f"{ISSUE_UNBOUND}_{self._role_id}",
-            is_fixable=False,
+            is_fixable=entry_id is not None,
             severity=ir.IssueSeverity.WARNING,
-            translation_key=ISSUE_UNBOUND,
+            # Two distinct translation keys, not one used with a
+            # conditionally-present fix_flow — see const.py's
+            # ISSUE_UNBOUND_FIXABLE comment for why.
+            translation_key=ISSUE_UNBOUND_FIXABLE if entry_id is not None else ISSUE_UNBOUND,
             translation_placeholders={
                 "role_name": self.name or self._role_id,
                 "entity_id": self.entity_id or self._role_id,
@@ -232,7 +392,10 @@ class RoleEntity(Entity):
     # -- rebind / unbind --------------------------------------------------------
 
     async def async_rebind(
-        self, new_source_ref: str | None, new_contract: dict[str, Any] | None = None
+        self,
+        new_source_ref: str | None,
+        new_contract: dict[str, Any] | None = None,
+        new_hide_source: bool | None = None,
     ) -> None:
         """Rebind (or unbind, if new_source_ref is None) this role.
 
@@ -242,7 +405,17 @@ class RoleEntity(Entity):
         flow (UI path) and from YAML reconciliation (declarative path) —
         both configuration sources converge on this one method, per the
         "one role model" rule in design §6.1/§10.3.
+
+        `new_hide_source`, when given, updates the role's hide_source policy
+        (e.g. a YAML record changing its `hide_source:` key on reload)
+        before the new binding's hide/migrate is applied; omitted (None)
+        leaves the current policy unchanged, which is what a UI rebind
+        (hide_source is not itself editable from the replace-hardware step)
+        always does.
         """
+        old_source_entity_id = self._source_entity_id
+        if new_hide_source is not None:
+            self._hide_source = new_hide_source
         self._unsubscribe_source()
         self._source_ref = new_source_ref
         self._source_entity_id = (
@@ -254,6 +427,7 @@ class RoleEntity(Entity):
             self._contract = dict(new_contract)
         self._resync_source_state()
         self._subscribe_source()
+        self._apply_hide_source_policy(old_source_entity_id=old_source_entity_id)
         if self.hass is not None:
             ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_UNBOUND}_{self._role_id}")
             self.async_write_ha_state()

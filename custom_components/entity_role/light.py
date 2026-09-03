@@ -10,7 +10,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
-from .const import CONF_CAPABILITY_CONTRACT, CONF_ROLE_ID, CONF_SOURCE, DOMAIN_LIGHT
+from .const import (
+    CONF_CAPABILITY_CONTRACT,
+    CONF_HIDE_SOURCE,
+    CONF_ROLE_ID,
+    CONF_SOURCE,
+    DEFAULT_HIDE_SOURCE,
+    DOMAIN_LIGHT,
+)
 from .entity import RoleEntity
 from .helpers import async_resolve_source_ref
 
@@ -48,6 +55,7 @@ class EntityRoleLight(RoleEntity, LightEntity):
             source_entity_id=resolved,
             contract=entry.options.get(CONF_CAPABILITY_CONTRACT, {}),
             source_ref=source_ref,
+            hide_source=entry.options.get(CONF_HIDE_SOURCE, DEFAULT_HIDE_SOURCE),
         )
 
     @classmethod
@@ -61,6 +69,7 @@ class EntityRoleLight(RoleEntity, LightEntity):
             source_entity_id=resolved,
             contract=record.get(CONF_CAPABILITY_CONTRACT, {}),
             source_ref=source_ref,
+            hide_source=record.get(CONF_HIDE_SOURCE, DEFAULT_HIDE_SOURCE),
         )
 
     @property

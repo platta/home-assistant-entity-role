@@ -35,8 +35,21 @@ YAML_SCHEMA_VERSION = 1
 
 # Repair issue raised when a role's source is removed from the registry
 # (design §8): the role survives, goes unavailable, and this issue deep-links
-# the user back into the replace-hardware options step.
+# the user back into the replace-hardware options step. Two distinct
+# translation keys, not one: hassfest's strings.json schema treats a plain
+# `description` and a `fix_flow` as mutually exclusive within one issue
+# entry ("two or more values in the same group of exclusion 'fixable'",
+# confirmed directly by this pass's own first CI run) — a real in-tree
+# fixable issue (e.g. workday's `bad_country`) carries only `title` +
+# `fix_flow`, no top-level `description`. A UI-owned role's issue
+# (`ISSUE_UNBOUND_FIXABLE`, is_fixable=True, entry_id known — repairs.py)
+# and a YAML-owned role's issue (`ISSUE_UNBOUND`, is_fixable=False, no
+# config entry to deep-link into) are therefore two different translation
+# keys sharing the same {role_name}/{entity_id} placeholders, chosen at
+# creation time in entity.py::_handle_source_unbound by whether entry_id is
+# available — not one key trying to serve both display shapes.
 ISSUE_UNBOUND = "role_unbound"
+ISSUE_UNBOUND_FIXABLE = "role_unbound_fixable"
 # Raised for a syntax-valid YAML file containing one invalid record (design
 # §10.1 R7 / spike gate d): the file as a whole is not rejected, only the
 # broken role is flagged.

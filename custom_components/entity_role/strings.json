@@ -60,6 +60,32 @@
       "title": "{role_name} needs replacement hardware",
       "description": "The entity previously bound to {entity_id} was removed from the registry. The role has been preserved and is unavailable. Open the role's Configure button to bind replacement hardware."
     },
+    "role_unbound_fixable": {
+      "title": "{role_name} needs replacement hardware",
+      "fix_flow": {
+        "step": {
+          "replace_hardware": {
+            "title": "[%key:component::entity_role::options::step::replace_hardware::title%]",
+            "description": "{title} is unbound. Choose the replacement implementation entity.",
+            "data": {
+              "source": "[%key:component::entity_role::options::step::replace_hardware::data::source%]"
+            }
+          },
+          "confirm_downgrade": {
+            "title": "[%key:component::entity_role::options::step::confirm_downgrade::title%]",
+            "description": "[%key:component::entity_role::options::step::confirm_downgrade::description%]",
+            "data": {
+              "confirm": "[%key:component::entity_role::options::step::confirm_downgrade::data::confirm%]"
+            }
+          }
+        },
+        "error": {
+          "source_not_found": "[%key:component::entity_role::options::error::source_not_found%]",
+          "domain_mismatch": "[%key:component::entity_role::options::error::domain_mismatch%]",
+          "role_on_role_rejected": "[%key:component::entity_role::options::error::role_on_role_rejected%]"
+        }
+      }
+    },
     "yaml_record_invalid": {
       "title": "Invalid entity_role YAML record: {role_id}",
       "description": "This record was not applied ({reason}); every other declared role is unaffected. Fix the record in the source file and reload."
