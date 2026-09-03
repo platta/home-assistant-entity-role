@@ -89,18 +89,38 @@ core-side fixes/improvements to the shared helper, mitigated the same way
 the design's own risk register already covers general helper-API churn
 (R22) — CI against both HA `stable` and `dev`.
 
-**Separately-scoped finding, not fixed in this revision (see the
-FOLLOW-UP comment on PLAT-128 in Jira):** neither this listener nor the
-helper's device-relinking behavior is actually exercised today — this
-integration does not set a role entity's `device_id` to its source's
-device at all, for either configuration source, despite design §4
-("Device linkage: like switch_as_x, the logical entity sets its registry
-device_id to the source's device, so it appears on the physical device's
-page"). That gap predates this ticket (present since the PLAT-126 spike)
-and is independent of the adopt-vs-retain question above either way; fixing
-it is out of this item's scope (rename/removal *tracking API* alignment,
-not new functionality) and the reviewing `DECISION` explicitly asked not to
-broaden scope unnecessarily.
+**Device linkage (PLAT-130, design §4):** implemented below as
+`_sync_device_link`, called from every path that can change what a role is
+bound to (initial bind in `async_added_to_hass`, `async_rebind`,
+`_handle_source_relinked`, and the device-only branch of
+`_handle_registry_event`) — not via the add-time `device_info`/
+`device_entry` mechanism `switch_as_x`'s own `BaseEntity.__init__` uses.
+Verified directly against a real, current `home-assistant/core` `dev` clone
+(`git clone --depth 1 --branch dev`, fetched 2026-09-02):
+`helpers/entity_platform.py::EntityPlatform._async_add_entity` only honors
+`entity.device_info`/`entity.device_entry` when `self.config_entry` is set —
+for any entity added without one (`_check_device_attach`, lines ~839-852) it
+silently forces `device_entry = None` and logs a deprecation report instead.
+Every YAML-owned role goes through exactly that no-config-entry path
+(`discovery.async_load_platform`, design §6.1), so the add-time mechanism
+cannot serve both configuration sources uniformly — using it would be
+precisely the source-conditional behavior design §10.3 calls a smell.
+
+`entity_registry.async_update_entity(entity_id, device_id=...)` has no such
+restriction: `_validate_item` only checks that the target device exists, not
+that the entity has a config entry. That is also the exact call
+`helper_integration.async_handle_source_entity_changes` itself uses to
+relink on a source device move — so this integration mirrors that one
+mechanic (a plain post-hoc registry write) behind its own unified,
+source-agnostic call site, rather than adopting the whole config-entry-scoped
+helper, per this ticket's own instruction. The role's own registry entry
+starts with `device_id=None` at construction (RoleEntity never sets
+`device_entry`/`device_info`) and is promoted/demoted afterward by
+`_sync_device_link` alone — for both configuration sources, through the same
+code path, so it is inherently symmetric rather than something that must be
+kept in sync by hand. The role never creates or owns a device: every write
+either points at an already-existing device the source itself belongs to, or
+clears the link to `None`.
 """
 
 from __future__ import annotations
@@ -227,6 +247,7 @@ class RoleEntity(Entity):
             # a UI rebind indefinitely.
             ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_UNBOUND}_{self._role_id}")
             self._apply_hide_source_policy(old_source_entity_id=None)
+            self._sync_device_link()
 
     def _apply_hide_source_policy(self, *, old_source_entity_id: str | None) -> None:
         """Hide the newly-bound source and migrate its expose settings onto
@@ -267,6 +288,41 @@ class RoleEntity(Entity):
                 async_migrate_expose_settings(
                     self.hass, self._source_entity_id, self.entity_id
                 )
+
+    def _sync_device_link(self) -> None:
+        """Link this role's registry device_id to its bound source's device
+        (design §4), or clear it when unbound or the source itself has none.
+
+        See the module docstring for why this goes through
+        `entity_registry.async_update_entity` — the same config-entry-
+        agnostic mechanic `helper_integration.async_handle_source_entity_
+        changes` itself uses to relink — rather than the add-time
+        `device_info`/`device_entry` mechanism, which `entity_platform.py`
+        only honors for a role backed by a config entry (i.e. never for a
+        YAML-owned one). Never creates or owns a device: `source_device_id`
+        below is read from the source's own current registry entry, never
+        synthesized, so a write here only ever points at an already-existing
+        device or clears the link.
+
+        Idempotent by construction (only writes when the value actually
+        differs), matching `_apply_hide_source_policy`'s own pattern — safe
+        to call unconditionally from every bind/rebind/relink path below,
+        including a registry event on the source that turned out to be
+        unrelated (e.g. an area/name change, where source_device_id is
+        already equal to what this role's entry already carries).
+        """
+        if self.hass is None or not self.entity_id:
+            return
+        registry = er.async_get(self.hass)
+        role_entry = registry.async_get(self.entity_id)
+        if role_entry is None:
+            return
+        source_device_id = None
+        if self._source_entity_id is not None:
+            source_entry = registry.async_get(self._source_entity_id)
+            source_device_id = source_entry.device_id if source_entry else None
+        if role_entry.device_id != source_device_id:
+            registry.async_update_entity(self.entity_id, device_id=source_device_id)
 
     async def async_will_remove_from_hass(self) -> None:
         self._unsubscribe_source()
@@ -323,12 +379,22 @@ class RoleEntity(Entity):
         surviving a rename from a removal (or an entity_id-pinned reference
         breaking on rename, the documented design §6.4 caveat), without a
         dependency on the specific shape of the registry event's payload.
+
+        That same entity_id-only re-resolution can't by itself notice the
+        source being moved to a different HA device (design §4) — the
+        source's entity_id, which is all `resolved` reflects, does not
+        change when only its device does. `_sync_device_link` is therefore
+        always resynced below, including on the "unrelated" branch, rather
+        than special-cased on `event.data["changes"]` containing
+        "device_id" — cheap (idempotent, one registry read) and keeps this
+        listener's payload-shape independence intact.
         """
         if self._source_ref is None:
             return
         resolved = async_resolve_source_ref(self.hass, self._source_ref)
         if resolved == self._source_entity_id:
-            return  # unrelated registry change (e.g. area/name) — no-op
+            self._sync_device_link()
+            return  # otherwise unrelated registry change (e.g. area/name)
         if resolved is None:
             self.hass.async_create_task(self._handle_source_unbound())
         else:
@@ -387,6 +453,7 @@ class RoleEntity(Entity):
         self._source_entity_id = new_entity_id
         self._resync_source_state()
         self._subscribe_source()
+        self._sync_device_link()
         self.async_write_ha_state()
 
     # -- rebind / unbind --------------------------------------------------------
@@ -428,6 +495,7 @@ class RoleEntity(Entity):
         self._resync_source_state()
         self._subscribe_source()
         self._apply_hide_source_policy(old_source_entity_id=old_source_entity_id)
+        self._sync_device_link()
         if self.hass is not None:
             ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_UNBOUND}_{self._role_id}")
             self.async_write_ha_state()
