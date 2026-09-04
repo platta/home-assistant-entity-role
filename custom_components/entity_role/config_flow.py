@@ -155,14 +155,27 @@ class EntityRoleConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> config_entries.ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
+            name = user_input["name"]
+            # A blank/whitespace-only name is rejected here the same way the
+            # declarative/YAML path rejects it (PLAT-150's `_non_blank_string`,
+            # yaml_config.py): `name` is the role's durable human-facing
+            # identity, distinct from both `role_id` and `source`, and this
+            # UI path was the one PLAT-150 explicitly left unfixed (PLAT-155).
+            # Field-scoped (not "base") so it renders under the Name field
+            # specifically, independent of any source-validation error below.
+            if not name.strip():
+                errors["name"] = "name_blank"
+
+            resolved: str | None = None
             try:
                 resolved = async_validate_source(
                     self.hass, self._role_domain, user_input[CONF_SOURCE]
                 )
             except SourceValidationError as err:
                 errors["base"] = str(err)
-            else:
-                self._name = user_input["name"]
+
+            if not errors:
+                self._name = name
                 self._source_entity_id = resolved
                 self._device_class = user_input.get(CONF_DEVICE_CLASS)
                 self._contract = self._seed_contract(resolved)

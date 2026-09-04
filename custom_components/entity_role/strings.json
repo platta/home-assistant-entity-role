@@ -27,6 +27,7 @@
       }
     },
     "error": {
+      "name_blank": "Name cannot be empty or contain only whitespace.",
       "source_not_found": "That entity could not be found in the entity registry.",
       "domain_mismatch": "That entity is not in the role's domain.",
       "role_on_role_rejected": "A role cannot be bound to another role (direct role-on-role bindings are rejected)."

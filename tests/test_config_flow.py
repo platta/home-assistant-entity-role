@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -62,6 +63,34 @@ async def test_creation_flow_happy_path(hass: HomeAssistant) -> None:
     ]
     assert len(role_ids) == 1
     assert hass.states.get(role_ids[0]) is not None
+
+
+@pytest.mark.parametrize("blank_name", ["", "   ", "\t\n"])
+async def test_creation_flow_rejects_blank_or_whitespace_only_name(
+    hass: HomeAssistant, blank_name: str
+) -> None:
+    """UI-path counterpart to test_required_name.py's declarative-path
+    coverage (PLAT-150): the config-entry creation flow left this gap open
+    (PLAT-155) — `name` must be rejected here the same way, as a normal form
+    validation error rather than an uncaught exception or a silently
+    accepted blank display name."""
+    source = create_source_entity(hass, "light", "nanoleaf", state="on")
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ROLE_DOMAIN: "light"}
+    )
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"name": blank_name, CONF_SOURCE: source}
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "source"
+    assert result["errors"] == {"name": "name_blank"}
+    # Rejected, not silently created under a fallback/blank display name.
+    assert hass.config_entries.async_entries(DOMAIN) == []
 
 
 async def test_creation_flow_source_step_uses_domain_filtered_selector(
