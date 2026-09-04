@@ -42,6 +42,41 @@ actual migration logic — this repository has no external users to migrate
 yet. The R7 degrade-with-repair-issue path above is this integration's
 existing, already-tested idiom for exactly this class of "record became
 invalid under new code" case, reused here rather than inventing a new one.
+
+**Predeclared, unbound roles (PLAT-151) — `source` optional:** `ROLE_SCHEMA`
+accepts a record with `source: null` or `source` omitted entirely (both
+normalize to `None` via the field's `default=None`) so the complete intended
+household role inventory can be declared in Git — stable `role_id` and
+`name` included — before any physical device is migrated into Home
+Assistant. This is deliberately *not* the same code path as an invalid
+record: an unbound role is a normal, successfully-validated record (`valid`,
+never `errors`/`_RecordError`), so no `ISSUE_YAML_RECORD_INVALID` repair
+issue is raised for it — predeclaring is the intended, expected state during
+migration, not a defect to nudge the author to fix. It is also a distinct
+condition from `ISSUE_UNBOUND`/`ISSUE_UNBOUND_FIXABLE` (entity.py,
+`_handle_source_unbound`): those exist specifically to flag that a source
+*was bound and then disappeared* — an anomaly worth surfacing in Settings →
+Repairs — whereas a predeclared role was simply never bound yet, which is
+not an anomaly. Both conditions produce the identical runtime shape
+(`RoleEntity(source_entity_id=None)`, `available=False`) and share every
+downstream behavior — availability, capability-contract fallback, hide/
+device-association no-ops — see entity.py's `contract_intersect_iterable`/
+`contract_intersect_bitmask` and `async_added_to_hass` docstrings/comments.
+
+A predeclared role's `_resolved_source` is `None` like any other unbound
+role's, so it flows through `async_reconcile_yaml_roles`'s existing
+"Existing: rebind in place" comparison unchanged: when a later Git commit
+adds a real `source:` to an already-declared role_id, `entity.
+source_entity_id` (`None`) differs from the freshly-resolved `record[
+"_resolved_source"]`, so the already-running entity is rebound via
+`async_rebind` in place — same `unique_id`/`entity_id`, no new entity, no
+consumer-visible identity change (design §4's stability guarantee, extended
+to the "never bound yet" starting state). The reverse — editing `source:`
+back to `null` on a previously-bound role — takes the identical comparison
+branch and unbinds the running entity the same way, rather than removing it
+(a role_id remains "declared" whether or not its `source` is currently
+non-null; only a role_id genuinely absent from the file is "removed", per
+the `declared_role_ids` comment below).
 """
 
 from __future__ import annotations
@@ -95,7 +130,18 @@ ROLE_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_ROLE_ID): cv.slug,
         vol.Required(CONF_ROLE_DOMAIN): vol.In(SUPPORTED_DOMAINS),
-        vol.Required(CONF_SOURCE): cv.string,
+        # Optional (PLAT-151): a declarative role may predeclare its logical
+        # identity with no source bound yet — `source: null` or the key
+        # omitted entirely, both normalized to `None` here via the shared
+        # `default=None`. `role_id` and `name` (below) are still required
+        # even while unbound: the whole point is that the role's stable
+        # identity exists in Git *before* migration binds it to hardware.
+        # A present-but-non-null value keeps going through the exact same
+        # `cv.string` + async_validate_source bind-time check as before — see
+        # _validate_records — so an invalid non-null source (typo,
+        # wrong-domain entity, role-on-role) still degrades that record with
+        # a repair issue exactly as it always has.
+        vol.Optional(CONF_SOURCE, default=None): vol.Any(None, cv.string),
         # Required (PLAT-150): a declarative role's human-facing display name
         # must be explicit — it must never fall back to `role_id` (a
         # machine-identity slug) as it silently did before. See this
@@ -178,15 +224,21 @@ def _validate_records(
             continue
         seen_role_ids.add(role_id)
 
-        try:
-            resolved = async_validate_source(
-                hass, record[CONF_ROLE_DOMAIN], record[CONF_SOURCE]
-            )
-        except SourceValidationError as err:
-            errors.append(_RecordError(role_id, str(err)))
-            continue
+        source = record[CONF_SOURCE]
+        if source is None:
+            # Predeclared, unbound (PLAT-151): no candidate to bind-validate
+            # against yet. Not an error — see ROLE_SCHEMA's comment above.
+            record["_resolved_source"] = None
+        else:
+            try:
+                resolved = async_validate_source(
+                    hass, record[CONF_ROLE_DOMAIN], source
+                )
+            except SourceValidationError as err:
+                errors.append(_RecordError(role_id, str(err)))
+                continue
+            record["_resolved_source"] = resolved
 
-        record["_resolved_source"] = resolved
         valid[role_id] = record
 
     return valid, errors
