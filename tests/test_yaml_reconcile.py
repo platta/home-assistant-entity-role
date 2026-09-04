@@ -51,7 +51,16 @@ async def test_yaml_reload_rebinds_in_place_without_restart(hass: HomeAssistant)
     source_a = create_source_entity(hass, "light", "nanoleaf", state="on")
     await async_reconcile_yaml_roles(
         hass,
-        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source_a}]},
+        {
+            DOMAIN: [
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": source_a,
+                    "name": "Kitchen Counter",
+                }
+            ]
+        },
     )
     await hass.async_block_till_done()
     role_entity_id = "light.kitchen_counter"
@@ -60,7 +69,16 @@ async def test_yaml_reload_rebinds_in_place_without_restart(hass: HomeAssistant)
     source_b = create_source_entity(hass, "light", "hue", state="off")
     await async_reconcile_yaml_roles(
         hass,
-        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source_b}]},
+        {
+            DOMAIN: [
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": source_b,
+                    "name": "Kitchen Counter",
+                }
+            ]
+        },
     )
     await hass.async_block_till_done()
 
@@ -75,7 +93,16 @@ async def test_yaml_removal_removes_the_role(hass: HomeAssistant) -> None:
     source = create_source_entity(hass, "light", "nanoleaf", state="on")
     await async_reconcile_yaml_roles(
         hass,
-        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source}]},
+        {
+            DOMAIN: [
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": source,
+                    "name": "Kitchen Counter",
+                }
+            ]
+        },
     )
     await hass.async_block_till_done()
     assert hass.states.get("light.kitchen_counter") is not None
@@ -94,8 +121,18 @@ async def test_bad_record_degrades_only_that_role(hass: HomeAssistant) -> None:
         hass,
         {
             DOMAIN: [
-                {"role_id": "kitchen_counter", "role_domain": "light", "source": good_source},
-                {"role_id": "broken", "role_domain": "light", "source": "light.does_not_exist"},
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": good_source,
+                    "name": "Kitchen Counter",
+                },
+                {
+                    "role_id": "broken",
+                    "role_domain": "light",
+                    "source": "light.does_not_exist",
+                    "name": "Broken Role",
+                },
             ]
         },
     )
@@ -113,7 +150,12 @@ async def test_record_becoming_valid_clears_its_issue(hass: HomeAssistant) -> No
         hass,
         {
             DOMAIN: [
-                {"role_id": "broken", "role_domain": "light", "source": "light.does_not_exist"}
+                {
+                    "role_id": "broken",
+                    "role_domain": "light",
+                    "source": "light.does_not_exist",
+                    "name": "Broken Role",
+                }
             ]
         },
     )
@@ -126,7 +168,16 @@ async def test_record_becoming_valid_clears_its_issue(hass: HomeAssistant) -> No
     fixed_source = create_source_entity(hass, "light", "hue", state="on")
     await async_reconcile_yaml_roles(
         hass,
-        {DOMAIN: [{"role_id": "broken", "role_domain": "light", "source": fixed_source}]},
+        {
+            DOMAIN: [
+                {
+                    "role_id": "broken",
+                    "role_domain": "light",
+                    "source": fixed_source,
+                    "name": "Broken Role",
+                }
+            ]
+        },
     )
     await hass.async_block_till_done()
 
@@ -148,7 +199,16 @@ async def test_existing_role_becoming_invalid_preserves_last_known_good(
     good_source = create_source_entity(hass, "light", "nanoleaf", state="on")
     await async_reconcile_yaml_roles(
         hass,
-        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": good_source}]},
+        {
+            DOMAIN: [
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": good_source,
+                    "name": "Kitchen Counter",
+                }
+            ]
+        },
     )
     await hass.async_block_till_done()
     role_entity_id = "light.kitchen_counter"
@@ -164,6 +224,7 @@ async def test_existing_role_becoming_invalid_preserves_last_known_good(
                     "role_id": "kitchen_counter",
                     "role_domain": "light",
                     "source": "light.does_not_exist",
+                    "name": "Kitchen Counter",
                 }
             ]
         },
@@ -185,7 +246,12 @@ async def test_existing_role_becoming_invalid_preserves_last_known_good(
         hass,
         {
             DOMAIN: [
-                {"role_id": "kitchen_counter", "role_domain": "light", "source": replacement_source}
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": replacement_source,
+                    "name": "Kitchen Counter",
+                }
             ]
         },
     )
@@ -205,8 +271,8 @@ async def test_duplicate_role_id_only_first_record_accepted(hass: HomeAssistant)
         hass,
         {
             DOMAIN: [
-                {"role_id": "dup", "role_domain": "light", "source": source},
-                {"role_id": "dup", "role_domain": "light", "source": source},
+                {"role_id": "dup", "role_domain": "light", "source": source, "name": "Dup Role"},
+                {"role_id": "dup", "role_domain": "light", "source": source, "name": "Dup Role"},
             ]
         },
     )

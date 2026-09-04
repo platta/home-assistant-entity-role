@@ -10,6 +10,38 @@ template/__init__.py::_reload_config uses, verified in design §2.3/§10.1 R7)
 and reconciles running roles to it *in place* rather than unloading and
 recreating them — see async_reconcile_yaml_roles docstring for the R7
 failure-mode contract this depends on.
+
+**`name` required (PLAT-150) — compatibility for a pre-existing record that
+omits it:** `ROLE_SCHEMA` now rejects a record with a missing or
+blank/whitespace-only `name` as `schema_invalid`, exactly like any other
+per-record schema violation — it flows through the same R7 degrade path
+(`_validate_records` -> `_RecordError` -> `ISSUE_YAML_RECORD_INVALID` repair
+issue) rather than a bespoke migration mechanism. The practical effect
+differs by when the record is (re-)evaluated:
+
+* **Live reload** (`entity_role.reload`, no HA restart) of a role that was
+  already running: the record becomes "declared but invalid"
+  (`invalid_but_declared` below) and, per R7's last-known-good contract, its
+  already-constructed entity is left completely untouched — same bound
+  source, same previously-set display name — while the repair issue nudges
+  the author to add `name:`. No identity/name change happens silently.
+* **A cold HA restart** after upgrading past this record's `DATA_YAML_ROLES`
+  reset to empty every reconcile, a name-less record is invalid from the
+  first evaluation and is simply never constructed — no "declared but
+  invalid" carry-forward applies, since there is no prior running instance
+  in the same session to preserve. The role goes fully unavailable (not
+  "silently renamed"; the pre-existing HA entity-registry entry, if any,
+  keeps whatever name was last recorded in the registry) with the same
+  repair issue surfaced, until `name:` is added and the file reloads/HA
+  restarts again.
+
+Not evidence of a released/versioned config format needing a version-gated
+migration: `manifest.json` is pre-1.0 (`0.3.0`), there are no git tags/HACS
+releases, and `YAML_SCHEMA_VERSION` (const.py) has never been wired to any
+actual migration logic — this repository has no external users to migrate
+yet. The R7 degrade-with-repair-issue path above is this integration's
+existing, already-tested idiom for exactly this class of "record became
+invalid under new code" case, reused here rather than inventing a new one.
 """
 
 from __future__ import annotations
@@ -28,6 +60,7 @@ from .const import (
     CONF_CAPABILITY_CONTRACT,
     CONF_DEVICE_CLASS,
     CONF_HIDE_SOURCE,
+    CONF_NAME,
     CONF_ROLE_DOMAIN,
     CONF_ROLE_ID,
     CONF_SOURCE,
@@ -41,12 +74,35 @@ from .helpers import SourceValidationError, async_validate_source
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _non_blank_string(value: Any) -> str:
+    """`cv.string` plus a blank/whitespace-only rejection (PLAT-150).
+
+    `name` is the role's durable human-facing identity (design intent per
+    PLAT-150: `role_id` is machine identity, `source` is the replaceable
+    physical implementation, `name` is what a person sees) — a value that is
+    present but empty or all-whitespace is exactly as useless as an absent
+    one, so it must fail validation the same way rather than silently
+    producing a blank Home Assistant display name.
+    """
+    value = cv.string(value)
+    if not value.strip():
+        raise vol.Invalid("name must not be blank")
+    return value
+
+
 ROLE_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_ROLE_ID): cv.slug,
         vol.Required(CONF_ROLE_DOMAIN): vol.In(SUPPORTED_DOMAINS),
         vol.Required(CONF_SOURCE): cv.string,
-        vol.Optional("name"): cv.string,
+        # Required (PLAT-150): a declarative role's human-facing display name
+        # must be explicit — it must never fall back to `role_id` (a
+        # machine-identity slug) as it silently did before. See this
+        # module's docstring reference and the platform `from_yaml_record`
+        # classmethods (light.py/switch.py/binary_sensor.py), which now read
+        # `record[CONF_NAME]` directly instead of defaulting it.
+        vol.Required(CONF_NAME): _non_blank_string,
         vol.Optional(CONF_CAPABILITY_CONTRACT, default=dict): dict,
         vol.Optional(CONF_DEVICE_CLASS): cv.string,
         vol.Optional(CONF_HIDE_SOURCE, default=DEFAULT_HIDE_SOURCE): cv.boolean,

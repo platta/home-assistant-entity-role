@@ -66,7 +66,12 @@ async def test_yaml_reconcile_with_records_does_not_touch_unrelated_ui_owned_rol
         hass,
         {
             DOMAIN: [
-                {"role_id": "kitchen_counter", "role_domain": "light", "source": yaml_source}
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": yaml_source,
+                    "name": "Kitchen Counter",
+                }
             ]
         },
     )
@@ -88,7 +93,12 @@ async def test_removing_ui_owned_role_does_not_affect_yaml_owned_role(
         hass,
         {
             DOMAIN: [
-                {"role_id": "kitchen_counter", "role_domain": "light", "source": yaml_source}
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": yaml_source,
+                    "name": "Kitchen Counter",
+                }
             ]
         },
     )
@@ -115,7 +125,12 @@ async def test_ui_and_yaml_roles_have_independent_identity_namespaces(
         hass,
         {
             DOMAIN: [
-                {"role_id": "kitchen_counter", "role_domain": "light", "source": yaml_source}
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": yaml_source,
+                    "name": "Kitchen Counter",
+                }
             ]
         },
     )

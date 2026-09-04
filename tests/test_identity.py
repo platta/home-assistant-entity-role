@@ -67,7 +67,16 @@ async def test_yaml_owned_role_unique_id_is_the_declared_role_id(hass: HomeAssis
     source = create_source_entity(hass, "light", "nanoleaf", state="on")
     await async_reconcile_yaml_roles(
         hass,
-        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source}]},
+        {
+            DOMAIN: [
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": source,
+                    "name": "Kitchen Counter",
+                }
+            ]
+        },
     )
     await hass.async_block_till_done()
 
@@ -86,7 +95,16 @@ async def test_yaml_owned_role_identity_stable_across_simulated_restart(
     itself (design §6.3: "bindings converge to Git with no dependence on
     .storage")."""
     source = create_source_entity(hass, "light", "nanoleaf", state="on")
-    config = {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source}]}
+    config = {
+        DOMAIN: [
+            {
+                "role_id": "kitchen_counter",
+                "role_domain": "light",
+                "source": source,
+                "name": "Kitchen Counter",
+            }
+        ]
+    }
 
     await async_reconcile_yaml_roles(hass, config)
     await hass.async_block_till_done()

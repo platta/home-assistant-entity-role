@@ -47,7 +47,7 @@ async def test_yaml_role_linked_to_source_device_on_initial_bind(hass: HomeAssis
     source = create_source_entity(hass, "light", "nanoleaf", state="on", device_id=device_id)
     await async_reconcile_yaml_roles(
         hass,
-        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source}]},
+        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source, "name": "Kitchen Counter"}]},
     )
     await hass.async_block_till_done()
 
@@ -63,7 +63,7 @@ async def test_rebind_relinks_to_new_source_device_identity_preserved(
     source_a = create_source_entity(hass, "light", "nanoleaf", state="on", device_id=device_a)
     await async_reconcile_yaml_roles(
         hass,
-        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source_a}]},
+        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source_a, "name": "Kitchen Counter"}]},
     )
     await hass.async_block_till_done()
     role_id = "light.kitchen_counter"
@@ -73,7 +73,7 @@ async def test_rebind_relinks_to_new_source_device_identity_preserved(
     source_b = create_source_entity(hass, "light", "hue", state="on", device_id=device_b)
     await async_reconcile_yaml_roles(
         hass,
-        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source_b}]},
+        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source_b, "name": "Kitchen Counter"}]},
     )
     await hass.async_block_till_done()
 
@@ -126,7 +126,7 @@ async def test_source_without_device_role_stays_unlinked_no_fabricated_device(
     source = create_source_entity(hass, "light", "nanoleaf", state="on")  # no device
     await async_reconcile_yaml_roles(
         hass,
-        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source}]},
+        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source, "name": "Kitchen Counter"}]},
     )
     await hass.async_block_till_done()
 

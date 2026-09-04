@@ -164,7 +164,16 @@ async def test_yaml_role_hides_source_by_default(hass: HomeAssistant) -> None:
     source = create_source_entity(hass, "light", "nanoleaf", state="on")
     await async_reconcile_yaml_roles(
         hass,
-        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source}]},
+        {
+            DOMAIN: [
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": source,
+                    "name": "Kitchen Counter",
+                }
+            ]
+        },
     )
     await hass.async_block_till_done()
 
@@ -181,6 +190,7 @@ async def test_yaml_role_hide_source_false_leaves_source_visible(hass: HomeAssis
                     "role_id": "kitchen_counter",
                     "role_domain": "light",
                     "source": source,
+                    "name": "Kitchen Counter",
                     "hide_source": False,
                 }
             ]

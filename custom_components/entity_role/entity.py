@@ -172,11 +172,17 @@ class RoleEntity(Entity):
         contract: dict[str, Any],
         source_ref: str | None = None,
         hide_source: bool = DEFAULT_HIDE_SOURCE,
+        *,
+        object_id: str | None = None,
     ) -> None:
         self._role_id = role_id
         self._role_domain = role_domain
         self._attr_unique_id = role_id
         self._attr_name = name
+        # `object_id`, when given, pins the *first-creation* entity_id
+        # independently of `name` — see the `suggested_object_id` override
+        # below for why this exists (PLAT-150 carry-forward finding).
+        self._object_id = object_id
         # `source_ref` is the persisted reference (registry UUID or plain
         # entity_id) as configured; `source_entity_id` is its resolution at
         # last (re)bind. They are re-reconciled on every registry event —
@@ -188,6 +194,46 @@ class RoleEntity(Entity):
         self._source_state: State | None = None
         self._remove_state_listener: Callable[[], None] | None = None
         self._remove_registry_listener: Callable[[], None] | None = None
+
+    @property
+    def suggested_object_id(self) -> str | None:
+        """Pin the entity_id a *newly-created* role registers under to
+        `role_id` when the caller provided one, instead of Home Assistant's
+        stock behavior of deriving it from `name` (`Entity.suggested_object_id`
+        slugifies `self.name`) — PLAT-150 carry-forward finding.
+
+        Only affects first-time registration: `entity_registry.async_get_or_
+        create` looks up an *existing* entry by `unique_id` before ever
+        consulting this property, so a role's entity_id — once assigned —
+        stays fixed across every later reconcile/rebind regardless of this
+        override (design §4's stability guarantee is otherwise untouched).
+
+        Why this matters *because of* PLAT-150 specifically: before `name`
+        was required, every YAML record without one fell back to
+        `name = role_id` (see the removed `record.get("name", record[
+        CONF_ROLE_ID])` in each platform's `from_yaml_record`), which meant
+        `suggested_object_id`'s stock name-derived slug coincidentally
+        equaled `role_id` in practice for every record this suite's own
+        fixtures ever exercised (e.g. `name: "Kitchen Counter"` already
+        slugifies back to `role_id: kitchen_counter`). With `name` now a
+        genuinely independent, human-chosen string, a differently-worded
+        `name` (e.g. `role_id: office_light`, `name: "Family Room Light"`)
+        would otherwise register under `light.family_room_light` on first
+        creation instead of the author-declared `light.office_light` —
+        breaking design §4's "YAML-owned role: an author-declared role_id
+        slug" identity guarantee and the Git-managed-determinism promise
+        (design §6.3: "bindings converge to Git with no dependence on
+        .storage") this integration's own tests already assert (see
+        tests/test_identity.py). Only the YAML construction path
+        (`from_yaml_record` classmethods) passes `object_id`; the UI/
+        config-entry path deliberately keeps deriving the object id from
+        the user-entered name, as it always has — a config-entry role's
+        `role_id` is `entry.entry_id` (an opaque UUID), never meant to
+        appear in an entity_id.
+        """
+        if self._object_id is not None:
+            return self._object_id
+        return super().suggested_object_id
 
     # -- identity / binding ---------------------------------------------------
 
