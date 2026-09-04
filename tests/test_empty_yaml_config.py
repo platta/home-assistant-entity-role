@@ -62,7 +62,12 @@ def test_role_list_schema_still_wraps_nonempty_single_record_shorthand() -> None
     """Negative control: a genuine single-record dict (not empty) must
     still be treated as one record via the standard ensure_list shorthand,
     not silently dropped by the empty-value fast path."""
-    record = {"role_id": "kitchen_counter", "role_domain": "light", "source": "light.x"}
+    record = {
+        "role_id": "kitchen_counter",
+        "role_domain": "light",
+        "source": "light.x",
+        "name": "Kitchen Counter",
+    }
     validated = ROLE_LIST_SCHEMA(record)
     assert len(validated) == 1
     assert validated[0]["role_id"] == "kitchen_counter"
@@ -125,7 +130,16 @@ async def test_later_valid_declaration_still_creates_roles_normally(
     source = create_source_entity(hass, "light", "nanoleaf", state="on")
     await async_reconcile_yaml_roles(
         hass,
-        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source}]},
+        {
+            DOMAIN: [
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": source,
+                    "name": "Kitchen Counter",
+                }
+            ]
+        },
     )
     await hass.async_block_till_done()
 

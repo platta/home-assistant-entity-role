@@ -74,7 +74,16 @@ async def test_yaml_owned_unbound_role_issue_is_not_fixable(hass: HomeAssistant)
     source = create_source_entity(hass, "light", "nanoleaf", state="on")
     await async_reconcile_yaml_roles(
         hass,
-        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source}]},
+        {
+            DOMAIN: [
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": source,
+                    "name": "Kitchen Counter",
+                }
+            ]
+        },
     )
     await hass.async_block_till_done()
 

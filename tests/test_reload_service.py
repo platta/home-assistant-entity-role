@@ -25,7 +25,16 @@ async def test_initial_yaml_config_creates_roles(hass: HomeAssistant) -> None:
     assert await async_setup_component(
         hass,
         DOMAIN,
-        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source}]},
+        {
+            DOMAIN: [
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": source,
+                    "name": "Kitchen Counter",
+                }
+            ]
+        },
     )
     await hass.async_block_till_done()
     assert hass.states.get("light.kitchen_counter") is not None
@@ -36,13 +45,29 @@ async def test_reload_service_picks_up_file_changes(hass: HomeAssistant) -> None
     assert await async_setup_component(
         hass,
         DOMAIN,
-        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source_a}]},
+        {
+            DOMAIN: [
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": source_a,
+                    "name": "Kitchen Counter",
+                }
+            ]
+        },
     )
     await hass.async_block_till_done()
 
     source_b = create_source_entity(hass, "light", "hue", state="off")
     new_config = {
-        DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source_b}]
+        DOMAIN: [
+            {
+                "role_id": "kitchen_counter",
+                "role_domain": "light",
+                "source": source_b,
+                "name": "Kitchen Counter",
+            }
+        ]
     }
 
     with patch(
@@ -64,7 +89,16 @@ async def test_reload_with_unparseable_file_leaves_roles_untouched(hass: HomeAss
     assert await async_setup_component(
         hass,
         DOMAIN,
-        {DOMAIN: [{"role_id": "kitchen_counter", "role_domain": "light", "source": source}]},
+        {
+            DOMAIN: [
+                {
+                    "role_id": "kitchen_counter",
+                    "role_domain": "light",
+                    "source": source,
+                    "name": "Kitchen Counter",
+                }
+            ]
+        },
     )
     await hass.async_block_till_done()
 

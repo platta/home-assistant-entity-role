@@ -14,6 +14,7 @@ from .const import (
     CONF_CAPABILITY_CONTRACT,
     CONF_DEVICE_CLASS,
     CONF_HIDE_SOURCE,
+    CONF_NAME,
     CONF_ROLE_ID,
     CONF_SOURCE,
     DEFAULT_HIDE_SOURCE,
@@ -73,11 +74,17 @@ class EntityRoleSwitch(RoleEntity, SwitchEntity):
         entity = cls(
             role_id=record[CONF_ROLE_ID],
             role_domain=DOMAIN_SWITCH,
-            name=record.get("name", record[CONF_ROLE_ID]),
+            # ROLE_SCHEMA now requires a non-blank `name` (PLAT-150) — no
+            # role_id fallback needed or wanted; a name-less record never
+            # reaches here (see yaml_config.py's module docstring).
+            name=record[CONF_NAME],
             source_entity_id=resolved,
             contract=record.get(CONF_CAPABILITY_CONTRACT, {}),
             source_ref=source_ref,
             hide_source=record.get(CONF_HIDE_SOURCE, DEFAULT_HIDE_SOURCE),
+            # Pin first-creation entity_id to role_id, independent of the
+            # now-independent `name` — see RoleEntity.suggested_object_id.
+            object_id=record[CONF_ROLE_ID],
         )
         entity._attr_device_class = record.get(CONF_DEVICE_CLASS)
         return entity

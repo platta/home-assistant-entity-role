@@ -50,6 +50,16 @@ under a domain-key `entity_role:` block and reloaded without restarting HA via t
 integration uses. A role is owned by exactly one source (UI *or* YAML, never both); nothing about
 the declarative path is visible anywhere in the UI-only experience above.
 
+Each declared role has three distinct identities, and every field below except
+`capability_contract`/`device_class`/`hide_source` is **required**:
+
+- `role_id` — the durable *machine* identity (the slug behind the entity's `unique_id`/`entity_id`).
+- `name` — the durable *human-facing* identity (what you and Home Assistant's UI actually call the
+  role). Required, and must not be blank/whitespace-only — it is never derived from `role_id` or
+  from the bound hardware, so replacing the hardware behind a role never changes what it's called.
+- `source` — the *replaceable physical implementation* currently bound to the role (an `entity_id`,
+  or, recommended for Git-managed deployments, an entity-registry UUID — see the design).
+
 ```yaml
 entity_role:
   - role_id: kitchen_counter
@@ -62,6 +72,11 @@ entity_role:
       supported_features: 0
     hide_source: true
 ```
+
+A record missing `name`, or whose `name` is blank/whitespace-only, fails validation with a repair
+issue (Settings → Repairs) rather than falling back to `role_id` or being silently accepted — see
+`yaml_config.py`'s module docstring for the exact compatibility behavior for a role that already
+existed before `name` became required.
 
 An empty declaration — `entity_role: []`, or an `!include` pointing at a file that is empty
 or contains only comments — is valid and means zero YAML-owned roles; it will not fail HA
