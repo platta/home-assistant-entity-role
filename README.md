@@ -50,15 +50,18 @@ under a domain-key `entity_role:` block and reloaded without restarting HA via t
 integration uses. A role is owned by exactly one source (UI *or* YAML, never both); nothing about
 the declarative path is visible anywhere in the UI-only experience above.
 
-Each declared role has three distinct identities, and every field below except
-`capability_contract`/`device_class`/`hide_source` is **required**:
+Each declared role has three distinct identities. `role_id` and `name` are always required;
+`capability_contract`, `device_class`, and `hide_source` are optional; `source` is required to be
+*present in the schema* but its value may be `null` (or the key omitted) to predeclare a role with
+no hardware bound yet — see [Predeclared, unbound roles](#predeclared-unbound-roles) below.
 
 - `role_id` — the durable *machine* identity (the slug behind the entity's `unique_id`/`entity_id`).
 - `name` — the durable *human-facing* identity (what you and Home Assistant's UI actually call the
   role). Required, and must not be blank/whitespace-only — it is never derived from `role_id` or
   from the bound hardware, so replacing the hardware behind a role never changes what it's called.
 - `source` — the *replaceable physical implementation* currently bound to the role (an `entity_id`,
-  or, recommended for Git-managed deployments, an entity-registry UUID — see the design).
+  or, recommended for Git-managed deployments, an entity-registry UUID — see the design), or `null`
+  if the role is not yet bound to anything.
 
 ```yaml
 entity_role:
@@ -82,6 +85,40 @@ An empty declaration — `entity_role: []`, or an `!include` pointing at a file 
 or contains only comments — is valid and means zero YAML-owned roles; it will not fail HA
 startup. This is the expected state for a fresh GitOps install or a recovery/bootstrap
 checkout before any household roles have been declared yet.
+
+### Predeclared, unbound roles
+
+A role's `source` may be `null` (or simply omitted), letting you declare the household's complete
+intended role inventory in Git before any of the physical devices behind it have been migrated
+into Home Assistant:
+
+```yaml
+entity_role:
+  - role_id: office_ceiling
+    role_domain: light
+    name: Office Ceiling
+    source: null
+    capability_contract:
+      supported_color_modes: [color_temp, hs]
+```
+
+An unbound role still registers with its declared `role_id` and `name` — dashboards, automations,
+and HomeKit can already reference it — but shows as **unavailable** until a source is bound. It
+does *not* raise a repair issue: predeclaring is the expected, intended state during a migration,
+unlike a role whose previously-bound source disappeared (see
+[Recovering an unbound role](#recovering-an-unbound-role) below, a genuinely different condition).
+
+While unbound, a role advertises its **declared `capability_contract` directly** (not intersected
+against any hardware, since there is none yet) — so the intended capabilities are visible up
+front rather than collapsing to nothing. `hide_source` and device-association are no-ops until a
+source exists (there is nothing to hide or link to).
+
+Migrating a device onto a predeclared role is a one-line Git change — add or update that role's
+`source:` — followed by `entity_role.reload` (or a normal HA restart). Reconciliation binds the
+already-existing logical role to the physical source **in place**: identity (`unique_id`/
+`entity_id`) never changes, so nothing downstream needs to reference a new entity. The same applies
+in reverse — setting `source:` back to `null` unbinds the role (returning it to unavailable) without
+removing it; only a role_id genuinely absent from the file is removed.
 
 ## Recovering an unbound role
 

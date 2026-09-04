@@ -293,7 +293,20 @@ class RoleEntity(Entity):
             # a UI rebind indefinitely.
             ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_UNBOUND}_{self._role_id}")
             self._apply_hide_source_policy(old_source_entity_id=None)
-            self._sync_device_link()
+        # Unconditional, not just in the bound branch above (PLAT-151): a
+        # role constructed unbound (predeclared, or a role_id whose record
+        # lost its `source` across a cold restart — DATA_YAML_ROLES resets
+        # then, so this is a fresh construction, not an async_rebind) may
+        # still own a *stale* device_id from a prior bound registry entry
+        # under the same unique_id. _sync_device_link is idempotent/cheap
+        # (a no-op when the target already matches, e.g. the genuinely
+        # brand-new-role case where it is already None) and is the only
+        # thing here that both matters and is safe to run while unbound —
+        # unlike issue-deletion (there is no ISSUE_UNBOUND to clear for a
+        # role that was never bound) and hide-source policy (nothing to
+        # hide without a source), it must actively clear a link that can
+        # otherwise dangle.
+        self._sync_device_link()
 
     def _apply_hide_source_policy(self, *, old_source_entity_id: str | None) -> None:
         """Hide the newly-bound source and migrate its expose settings onto
@@ -552,15 +565,38 @@ class RoleEntity(Entity):
     # -- capability contract (design §5: advertise contract ∩ source) -----------
 
     def contract_intersect_iterable(self, key: str, source_value: Any) -> list[Any]:
-        """Set-valued capability: advertise contract ∩ source, e.g. color modes."""
+        """Set-valued capability: advertise contract ∩ source, e.g. color modes.
+
+        While unbound (PLAT-151: `self._source_entity_id is None`, not merely
+        the transient case of a bound source whose state hasn't loaded yet)
+        there is no hardware to intersect against at all — advertise the
+        declared contract's own value directly rather than collapsing to
+        nothing, so a predeclared role's intended capabilities are visible
+        (e.g. to HomeKit bridge setup) before a source is ever attached. This
+        applies identically whether the role was predeclared unbound from
+        the start or lost a previously-bound source (`_handle_source_
+        unbound`) — both are the same "no source" shape, and design §10.3
+        rules out defining this behavior differently depending on how that
+        shape was reached.
+        """
         contract_value = self._contract.get(key)
-        if not contract_value or source_value is None:
+        if not contract_value:
+            return []
+        if self._source_entity_id is None:
+            return sorted(set(contract_value))
+        if source_value is None:
             return []
         return sorted(set(contract_value) & set(source_value))
 
     def contract_intersect_bitmask(self, key: str, source_value: int | None) -> int:
-        """Bitmask-valued capability: advertise contract & source."""
+        """Bitmask-valued capability: advertise contract & source.
+
+        See contract_intersect_iterable's docstring — the same unbound
+        fallback applies here.
+        """
         contract_value = self._contract.get(key, 0) or 0
+        if self._source_entity_id is None:
+            return int(contract_value)
         if source_value is None:
             return 0
         return int(contract_value) & int(source_value)
